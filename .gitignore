@@ -1,0 +1,21 @@
+# >>> engine: machine state — written by engine.py from .claude/ownership.txt; edit it there
+.claude/state/
+.claude/settings.local.json
+.claude/worktrees/
+.claude/**/__pycache__/
+.claude/overseer/mode
+.claude/overseer/state
+.claude/overseer/.last_audit_sha
+.claude/overseer/.last_continue_sha
+.claude/overseer/.continue_count
+.claude/overseer/.budget-*.json
+.claude/overseer/complexity-report.md
+.claude/unattended/state.json
+.claude/unattended/cost.json
+.claude/unattended/heartbeat
+.claude/unattended/restarts.log
+.claude/unattended/sim-plan.txt
+.claude/unattended/supervisor.lock
+.claude/unattended/logs/
+.claude/unattended/archive/
+# <<< engine

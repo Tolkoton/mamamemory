@@ -1,0 +1,144 @@
+# Who owns every path. Read by engine.py (install, update, status) and by people.
+#
+# Format:  <owner>  <pattern>  [seed=<file in this repository>]
+#
+# The FIRST rule that matches a path decides its owner, so rules go from the specific
+# to the general. Patterns are anchored at the repository root: `*` stays inside one
+# directory, `**` crosses directories, a trailing `/` means "this directory and
+# everything under it".
+#
+# engine   Ships into every project. `engine.py update` replaces it there only while the
+#          project has not changed it; an edited file is reported, never overwritten. (An
+#          edited .claude/settings.json gains the overseer's two handlers when it lacks them.)
+# project  Belongs to the project; the engine never overwrites it. With `seed=`, the first
+#          install creates the file from that seed if the project lacks it — once.
+#          In THIS repository the word also covers the engine's own records, tests and
+#          evals: they are this repository's project data and never ship.
+# machine  State of one machine and one run. Never committed, never shipped. Every install
+#          writes these patterns into the project's .gitignore, and this repository's own
+#          .gitignore must list them too (tests/test_ownership.py checks it).
+# user     The owner's own. Personal skills (install.sh links them into ~/.claude/skills) and
+#          user/settings.json, the personal settings layer (`engine.py install --personal`
+#          merges it into the home settings file). Never shipped into a project.
+#
+# THE BOUNDARY (package 3c). `.claude/` is what defines, configures and feeds the gates —
+# Claude Code protects every agent-tool write there. `.engine/` is what the agent produces
+# while working — records, contracts, architecture, premises, spikes, PROGRESS — and is not
+# protected. Machine state is under `.claude/state/`, written by hooks and scripts only.
+
+# --- machine state: one directory, one line in .gitignore --------------------------------
+machine  .claude/state/
+machine  .claude/settings.local.json
+machine  .claude/worktrees/
+machine  .claude/**/__pycache__/
+
+# --- written by engine.py into every project; never present in this repository ------------
+engine   .claude/engine-lock.json
+
+# --- the one project file left inside .claude/: the gates' switchboard ---------------------
+project  .claude/project.env              seed=templates/project/.claude/project.env
+
+# --- what the agent produces, in .engine/ (in this repository: the engine's own records) ----
+project  .engine/overseer/ledger.md       seed=templates/project/.engine/overseer/ledger.md
+project  .engine/overseer/audit.md        seed=templates/project/.engine/overseer/audit.md
+project  .engine/overseer/escalations.md  seed=templates/project/.engine/overseer/escalations.md
+project  .engine/overseer/parked.md       seed=templates/project/.engine/overseer/parked.md
+project  .engine/overseer/MEMORY.md       seed=templates/project/.engine/overseer/MEMORY.md
+project  .engine/premises/premise-log.md  seed=templates/project/.engine/premises/premise-log.md
+project  .engine/rules.md                 seed=templates/project/.engine/rules.md
+project  .engine/goals.md                 seed=templates/project/.engine/goals.md
+
+# --- the operator's facts the master-architect reads at pre-flight (board 202): seeded once ---
+project  docs/infra.md  seed=templates/project/docs/infra.md
+# The snapshot "as it was" (board 071): no seed — a project has one only after its owner ran
+# `baseline.py record`. Written by that script alone and committed with the project; the owner's
+# approval of its text is machine state (.claude/state/baseline/approved.sha256).
+project  .engine/baseline.json
+# The testing ledger (board 062): written by testing.py, read in the owner's review. Its machine
+# state — requests, recorded rows, the seals of contract tests — is .claude/state/testing/. The
+# script, the shared check test_touch.py and the two agents (test-manager, slice-tester) are the
+# engine's by the rule `.claude/**`.
+project  .engine/testing/
+project  .engine/**
+
+# --- legacy paths of a project built before package 3c. Still the PROJECT'S data: never ----
+# --- touched by install/update, moved to .engine/ by engine.py's migration table. Listed ---
+# --- explicitly so the catch-all engine rule below can never retire them. -----------------
+project  .claude/overseer/ledger.md
+project  .claude/overseer/audit.md
+project  .claude/overseer/escalations.md
+project  .claude/overseer/parked.md
+project  .claude/overseer/MEMORY.md
+project  .claude/overseer/slice/
+project  .claude/architecture/
+project  .claude/premises/
+project  .claude/artifacts/
+
+# --- legacy MACHINE STATE of a project built before package 3c. Moved to .claude/state/ by -----
+# --- engine.py (STATE_MIGRATIONS); until then still state, never retired, never held back. ----
+# --- Being machine rules, they also go into the project's .gitignore block for the transition.
+machine  .claude/overseer/mode
+machine  .claude/overseer/state
+machine  .claude/overseer/.last_audit_sha
+machine  .claude/overseer/.last_continue_sha
+machine  .claude/overseer/.continue_count
+machine  .claude/overseer/.budget-*.json
+machine  .claude/overseer/complexity-report.md
+machine  .claude/unattended/state.json
+machine  .claude/unattended/cost.json
+machine  .claude/unattended/heartbeat
+machine  .claude/unattended/restarts.log
+machine  .claude/unattended/sim-plan.txt
+machine  .claude/unattended/supervisor.lock
+machine  .claude/unattended/logs/
+machine  .claude/unattended/archive/
+
+# --- everything else under .claude/ is the engine ------------------------------------------
+# A file the engine once shipped and no longer does is RETIRED by this same rule: it is still
+# engine-owned, so `engine.py update` removes it from a project that left it unchanged and keeps
+# (and reports) one the project edited. Retired so far under .claude/unattended/ (board 039, the
+# DAG supervisor — unattended work goes through the task board only): the supervisor loop, its
+# run-state and session scripts, config.sh, watch.sh, rotate.sh, the parked re-check and the
+# systemd unit. Their machine state stays the project's machine state (the rules above).
+engine   .claude/**
+
+# --- root files a project starts from: short clean seeds, not this repository's own files. ---
+# --- The engine's rules reach a project as .claude/engine-rules.md (engine-owned, above); the --
+# --- seed CLAUDE.md imports it from a marked block that engine.py maintains (package 2b). ----
+project  CLAUDE.md  seed=templates/project/CLAUDE.md
+project  AGENTS.md  seed=templates/project/AGENTS.md
+
+# --- the task board (package board): the project's own. The manual, the task template and ----
+# --- the five columns are seeded once; no update ever overwrites or re-creates one of them. ---
+project  tasks/README.md         seed=templates/project/tasks/README.md
+project  tasks/TEMPLATE.md       seed=templates/project/tasks/TEMPLATE.md
+project  tasks/TEMPLATE-onboard.md  seed=templates/project/tasks/TEMPLATE-onboard.md
+project  tasks/CLASSES.md        seed=templates/project/tasks/CLASSES.md
+project  tasks/todo/.gitkeep     seed=templates/project/tasks/todo/.gitkeep
+project  tasks/doing/.gitkeep    seed=templates/project/tasks/doing/.gitkeep
+project  tasks/blocked/.gitkeep  seed=templates/project/tasks/blocked/.gitkeep
+project  tasks/done/.gitkeep     seed=templates/project/tasks/done/.gitkeep
+project  tasks/proposed/.gitkeep  seed=templates/project/tasks/proposed/.gitkeep
+project  tasks/
+
+# --- the owner's personal layer: skills and settings ---------------------------------------
+user     user/settings.json
+user     user/**
+
+# --- the settings proposal (board 038): the project's. No agent may edit .claude/settings.json; -
+# --- it proposes the whole file here and the owner's «так» has the board runner apply it --------
+# --- (.claude/unattended/owner_action.py, checked by settings_check.py beside it — both the ------
+# --- engine's, above). No seed file: engine.py creates the proposal once as a copy of the --------
+# --- project's OWN live settings, and keeps it identical only while it was identical. ------------
+project  docs/tasks/settings.json
+
+# --- proposals for the owner's hands, the measuring instruments and their fixtures ---------
+project  docs/tasks/
+project  docs/engine-limits.md
+project  evals/settings_parity.py
+project  evals/permission_rules.py
+project  evals/needs_audit.py
+project  tests/fixtures/
+
+# --- everything else is this repository's own material: installer, evals, tests, docs, seeds
+project  **

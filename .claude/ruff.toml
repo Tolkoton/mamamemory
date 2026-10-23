@@ -1,0 +1,12 @@
+# The engine's own Python (hooks, harness) is not the project's code and is not written to
+# the project's rules. Without this file a project-wide `ruff check .` judged it by the
+# project's config: a perfectly green change could not end the turn (evals scenario
+# vs-engine-files-in-lint-scope), and a project-wide `ruff format .` rewrote the engine
+# copy in place. Ruff applies the closest config file, so this one governs .claude/ only.
+#
+# An exclude is ignored for a file passed EXPLICITLY unless the caller adds --force-exclude
+# (setting it here has no effect: ruff reads that option from the top-level config only —
+# verified). format-on-edit.sh passes the flag; do the same in pre-commit or CI.
+#
+# To lint the engine itself, in the engine repository:  ruff check --isolated .claude
+exclude = ["*"]

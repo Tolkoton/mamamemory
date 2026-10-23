@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""
+Claude Code hook to auto-approve WebFetch and WebSearch for ANY domain.
+
+Why this exists:
+  Claude Code's settings.json permissions for WebFetch are buggy in current versions.
+  - "WebFetch" (bulk) in allow → still prompts for each domain (issue #11972)
+  - "WebFetch(domain:*)" wildcard → ignored
+  - Even "Yes, allow domain X for all projects" prompt → doesn't always persist (#27582)
+
+  Hooks run BEFORE permission evaluation and return explicit allow/deny.
+  This works reliably in CLI, VSCode extension, sub-agents, and planning mode.
+
+Optional restriction:
+  Set ALLOWED_FETCH_DOMAINS to a set of hostnames to restrict.
+  Leave as None to allow ALL domains.
+
+Exit codes:
+  0 = Hook decided (JSON printed to stdout)
+  1 = Hook did not decide; falls back to normal permission flow
+
+Source: adapted from https://dev.to/alexisfranorge (Dec 2025)
+"""
+from __future__ import annotations
+
+import json
+import sys
+from typing import Any
+from urllib.parse import urlparse
+
+# Restrict WebFetch to a domain allowlist (set of lowercase hostnames).
+# Leave as None to allow ALL domains (recommended for autonomy).
+ALLOWED_FETCH_DOMAINS: set[str] | None = None
+# Example to restrict: {"docs.python.org", "github.com", "stackoverflow.com"}
+
+# Force WebSearch results to specific domains.
+# Leave as None to not force any filtering.
+FORCE_SEARCH_ALLOWED_DOMAINS: list[str] | None = None
+
+
+def log(msg: str) -> None:
+    print(f"[auto-approve-web] {msg}", file=sys.stderr)
+
+
+def host_of(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "").lower()
+    except Exception:  # noqa: BLE001 — any parse failure means "no hostname"
+        return ""
+
+
+def emit(result: dict[str, Any]) -> None:
+    try:
+        print(json.dumps(result))
+        sys.exit(0)
+    except (TypeError, ValueError) as e:
+        log(f"failed to serialize: {e}")
+        sys.exit(1)
+
+
+def fail_open(why: str) -> None:
+    """Allow the call instead of deferring to the normal permission flow.
+
+    WHY: `sys.exit(1)` means "hook did not decide", which hands the call to the
+    interactive permission prompt. Unattended, nobody answers that prompt and
+    the whole run hangs on a read-only web fetch — the failure this hook exists
+    to prevent, reintroduced through its own error paths.
+
+    SAFE BECAUSE the only thing being allowed is WebFetch/WebSearch. Two things
+    keep that true, and both must hold:
+      1. settings.json wires this hook with matcher "WebFetch|WebSearch", so it
+         is never consulted about any other tool.
+      2. The explicit guard in main() re-checks tool_name and exits 1 for
+         anything else — that guard is the real security boundary and is
+         deliberately NOT fail-open.
+    If you ever widen the matcher, revisit this function first.
+    """
+    log(f"failing open ({why}) — allowing rather than hanging on a prompt")
+    emit({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": f"Auto-approved (fail-open: {why})",
+        }
+    })
+
+
+def handle_pre_tool_use(tool: str, tool_input: dict[str, Any]) -> None:
+    updated_input: dict[str, Any] | None = None
+
+    if tool == "WebFetch" and ALLOWED_FETCH_DOMAINS is not None:
+        host = host_of(tool_input.get("url", ""))
+        if host not in ALLOWED_FETCH_DOMAINS:
+            emit({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": f"WebFetch blocked by hook: '{host}' not in ALLOWED_FETCH_DOMAINS",
+                }
+            })
+
+    if tool == "WebSearch" and FORCE_SEARCH_ALLOWED_DOMAINS is not None:
+        updated_input = dict(tool_input)
+        updated_input["allowed_domains"] = list(FORCE_SEARCH_ALLOWED_DOMAINS)
+
+    result: dict[str, Any] = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": f"Auto-approved {tool} via hook",
+        }
+    }
+    if updated_input is not None:
+        result["hookSpecificOutput"]["updatedInput"] = updated_input
+
+    emit(result)
+
+
+def handle_permission_request() -> None:
+    emit({
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {"behavior": "allow"},
+        }
+    })
+
+
+def main() -> None:
+    try:
+        data = json.load(sys.stdin)
+    except json.JSONDecodeError as e:
+        fail_open(f"invalid JSON input: {e}")
+        return
+    except Exception as e:  # noqa: BLE001 — fail open by design, see fail_open()
+        fail_open(f"failed to read stdin: {e}")
+        return
+
+    event = data.get("hook_event_name", "")
+    tool = data.get("tool_name", "")
+    tool_input = data.get("tool_input") or {}
+
+    # SECURITY: handle ONLY WebFetch and WebSearch.
+    # This guard is the security boundary and is deliberately NOT fail-open —
+    # a tool outside this hook's remit must fall through to the normal
+    # permission flow, never be allowed by it.
+    if tool not in ("WebFetch", "WebSearch"):
+        sys.exit(1)
+
+    if event == "PreToolUse":
+        handle_pre_tool_use(tool, tool_input)
+    elif event == "PermissionRequest":
+        handle_permission_request()
+    else:
+        # Tool is already confirmed in-remit above, so allowing is safe and
+        # deferring is not: an unrecognized event name must not hang the run.
+        fail_open(f"unknown event: {event}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 — fail open by design, see fail_open()
+        fail_open(f"unexpected error: {e}")
