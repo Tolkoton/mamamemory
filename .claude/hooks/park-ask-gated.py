@@ -77,22 +77,19 @@ ASK_GATED = [
     r"^\s*git\s+merge(\s|$)",
     r"^\s*git\s+cherry-pick(\s|$)",
     r"^\s*git\s+revert(\s|$)",
-    r"(^|\s)uv\s+(add|remove)(\s|$)",
-    r"(^|\s)poetry\s+(add|remove)(\s|$)",
+    # The project's own manager (uv/poetry/npm/yarn/pnpm/cargo/go/bundle add/remove) left the
+    # list (board 302): the engineer picks the packages. What stays installs outside the
+    # project's manifest and lock file.
     r"(^|\s)pip\s+(install|uninstall)(\s|$)",
     r"(^|\s)pipx\s+(install|uninstall)(\s|$)",
-    r"(^|\s)npm\s+(install|uninstall)(\s|$)",
-    r"(^|\s)yarn\s+(add|remove)(\s|$)",
-    r"(^|\s)pnpm\s+(add|remove)(\s|$)",
+    r"(^|\s)npm\s+(install|i)\s+(.*\s)?(-g|--global)(\s|$)",
+    r"(^|\s)pnpm\s+add\s+(.*\s)?(-g|--global)(\s|$)",
+    r"(^|\s)yarn\s+global(\s|$)",
     r"(^|\s)docker\s+push(\s|$)",
     r"(^|\s)gh\s+pr\s+(create|merge)(\s|$)",
     r"(^|\s)gh\s+release(\s|$)",
     r"(^|\s)gh\s+repo\s+(create|delete)(\s|$)",
-    r"(^|\s)cargo\s+(add|remove)(\s|$)",
-    r"(^|\s)go\s+get(\s|$)",
-    r"(^|\s)go\s+mod\s+tidy(\s|$)",
     r"(^|\s)gem\s+install(\s|$)",
-    r"(^|\s)bundle\s+(add|remove)(\s|$)",
 ]
 ASK_GATED_RE = [re.compile(p) for p in ASK_GATED]
 

@@ -29,10 +29,11 @@
 #                       (--resume); a usage-limit notice waits 15 minutes and is not an attempt
 #   the task is closed  when the agent moved it to done/ or blocked/. Then: the working tree is
 #                       checked (see below), push, next task
-#   a task is stuck     three attempts in a row without a new commit; a task older than twelve
-#                       hours; the task's budget spent; three overseer BLOCKs in a row on one of
-#                       its units: the runner PARKS the task and takes the next one (see below)
-#                       — one task never stops the board
+#   a task is stuck     three attempts in a row without a new commit; the task's budget spent;
+#                       three overseer BLOCKs in a row on one of its units: the runner PARKS the
+#                       task and takes the next one (see below) — one task never stops the board.
+#                       Time alone parks nothing: a task that keeps committing runs as long as it
+#                       needs (board 404)
 #   extra sessions      a task that says «Додаткові сесії: так» (evals, measurements, a release
 #                       audit, a full simplifier pass) is taken only when no ordinary task can
 #                       start, and not at all while the extra sessions of the last seven days are
@@ -137,8 +138,9 @@
 # approved under the question of a /maintain task — owner_action.py updates them one at a time,
 # each checked by the full gate and committed on its own or rolled back), `amend-goals` /
 # `seal-goals` (boards 051, 787: goals.py puts an approved amendment in place of the goals document
-# and seals it, or puts the first seal on the document the owner approved) and the gate's
-# `close-escalation` above.
+# and seals it, or puts the first seal on the document the owner approved — in a new project
+# `board.py architect-task` then puts the /master-architect task, with the owner present, into
+# todo/: board 205) and the gate's `close-escalation` above.
 # The same rule for where the answer came from applies. The offer is then replaced by the
 # outcome and the task returns to todo/ for the agent to check and report; a rule question the
 # runner acted on goes straight to done/ with a short report, no agent is started for it.
@@ -166,8 +168,8 @@
 #
 # Every number is an environment variable, so the tests run in seconds:
 #   BOARD_BRANCH (unattended/work)  BOARD_REMOTE (origin)  BOARD_INBOX (~/engine-ops/tasks-inbox)
-#   BOARD_CLAUDE (claude)  BOARD_LIMIT_WAIT_SEC (900)  BOARD_TASK_MAX_SEC (43200)
-#   BOARD_STALL_ATTEMPTS (3)  BOARD_PAUSE_SEC (30, between attempts)
+#   BOARD_CLAUDE (claude)  BOARD_LIMIT_WAIT_SEC (900)  BOARD_STALL_ATTEMPTS (3)
+#   BOARD_PAUSE_SEC (30, between attempts)
 #   BOARD_MAX_USD (empty = no cap): the most one task may cost; passed on as --max-budget-usd
 
 set -uo pipefail
@@ -193,7 +195,6 @@ REMOTE="${BOARD_REMOTE:-origin}"
 INBOX="${BOARD_INBOX:-$HOME/engine-ops/tasks-inbox}"
 CLAUDE_BIN="${BOARD_CLAUDE:-claude}"
 LIMIT_WAIT="${BOARD_LIMIT_WAIT_SEC:-900}"
-TASK_MAX="${BOARD_TASK_MAX_SEC:-43200}"
 STALL_ATTEMPTS="${BOARD_STALL_ATTEMPTS:-3}"
 PAUSE="${BOARD_PAUSE_SEC:-30}"
 MAX_USD="${BOARD_MAX_USD:-}"
@@ -452,7 +453,7 @@ local_gate_answers() {
 # Act on the owner's «так» (exactly that one word, board 036) under an offered action. Run here, by the runner — never by an agent;
 # owner_action.py holds the list of what may be run and refuses inside a Claude Code session.
 owner_actions() {
-  local name action arg sum line rc outcome path
+  local name action arg sum line rc outcome path placed
   local -a rules
   while IFS=$'\t' read -r name action arg sum; do
     [ -n "$name" ] || continue
@@ -498,6 +499,14 @@ owner_actions() {
     esac
     board_commit "board: ${name%.md} — $action on the owner's answer: $outcome" \
       || finish error - commit "cannot commit the outcome of the action"
+    if [ "$action" = seal-goals ] && [ "$outcome" = applied ]; then   # board 205: sealed goals hand off to the architect
+      placed=$(board architect-task) || finish error - action "board.py architect-task failed"
+      if [ -n "$placed" ]; then
+        event "architect-task $placed"
+        board_commit "board: the goals sealed — the architecture task, with the owner present: $placed" \
+          || finish error - commit "cannot commit the architecture task"
+      fi
+    fi
   done <<< "$(board owner-actions)"
 }
 
@@ -889,9 +898,6 @@ run_task() {
     fi
     if [ -f "$(reader_marker "$stem")" ]; then   # board 099, 100: three readers in a row refused the sketch's record or the task's report
       park_task "$stem" reader-blocks "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("record", ""))' "$(reader_marker "$stem")" 2>/dev/null)"; return 0
-    fi
-    if [ "$(memo get "$stem" age_sec)" -ge "$TASK_MAX" ]; then
-      park_task "$stem" deadline "$((TASK_MAX / 3600))"; return 0
     fi
     if [ "$(memo get "$stem" idle)" -ge "$STALL_ATTEMPTS" ]; then
       park_task "$stem" no-commit "$STALL_ATTEMPTS"; return 0

@@ -2,8 +2,8 @@
 """What the board runner remembers about each task, in .claude/state/board/costs.json.
 
 board-runner.sh is a shell loop; everything it must remember across attempts — and across its
-own restarts — is kept here, per task: when the task was started (set once, so the twelve-hour
-limit is the task's and not the process's), the conversation to continue, how many attempts in
+own restarts — is kept here, per task: when the task was started (set once, so the review's
+"in work for" is the task's and not the process's), the conversation to continue, how many attempts in
 a row made no commit, and what every attempt reported as its cost.
 
     board_state.py <state-dir> begin  <task>                 make the entry (keeps an existing one)
@@ -16,7 +16,7 @@ a row made no commit, and what every attempt reported as its cost.
     board_state.py <state-dir> rebudget <task>               what is spent so far no longer counts
                                                              against the cap (the owner answered a
                                                              task parked for its budget)
-    board_state.py <state-dir> get    <task> <field> [cap]   age_sec | session | idle | cost | attempts
+    board_state.py <state-dir> get    <task> <field> [cap]   session | idle | cost | attempts
                                                              | left (cap minus what was spent since
                                                              the last rebudget, two decimals)
     board_state.py <state-dir> finish <task> <outcome>       done | blocked: close the entry
@@ -160,9 +160,6 @@ def record(found: JsonObj, output: Path, committed: bool) -> str:
 
 
 def get(found: JsonObj, field: str, cap: str) -> str:
-    if field == "age_sec":
-        started = datetime.strptime(str(found["started_utc"]), STAMP).replace(tzinfo=UTC)
-        return str(int((datetime.now(UTC) - started).total_seconds()))
     if field == "session":
         return str(found["session_id"])
     if field == "idle":

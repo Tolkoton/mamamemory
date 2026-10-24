@@ -68,7 +68,11 @@ changed line; the agent, when the task returns to it, commits the document. The 
 document written with nobody in the conversation goes the same way (board 787): the offer
 `Дія runner-а: seal-goals <sha256 of .engine/goals.md>` under a question that shows the whole document; on
 `так` the runner has `goals.py` seal exactly that document — one that changed since the question is stale,
-one already approved and changed is an amendment, not a first seal. A lesson
+one already approved and changed is an amendment, not a first seal. In a new project (no traceability matrix,
+no map) the runner then puts the architecture task into `todo/` itself, in a commit of its own (board 205,
+`board.py architect-task`: `NNN-master-architect.md`, a task to run `/master-architect` with `Потрібна присутність
+власника: так` — the architect stops for the owner at «Читання цілей», before any design); never after an
+amendment, never while one lies in any column. A lesson
 becomes a rule the same way and no other: the question `8NN-rule-proposal-*.md` carries the offer
 `Дія runner-а: promote-rule <sha256>`; on the owner's `так` the runner has `lesson_queue.py` add
 that exact text to `.engine/rules.md`, on `ні` it closes the proposal, commits, and moves the
@@ -98,8 +102,7 @@ A session that ends with the task still open is continued (`--resume`); a usage-
 waits 15 minutes. When the agent has moved the task to `done/` or `blocked/` the runner pushes
 the branch and takes the next one.
 
-One task never stops the board. After three attempts in a row without a commit, after twelve
-hours on one task, when the task's budget (`BOARD_MAX_USD`) is spent, or when three overseers in a
+One task never stops the board. After three attempts in a row without a commit, when the task's budget (`BOARD_MAX_USD`) is spent, or when three overseers in a
 row answered BLOCK on one of its units (the Stop hook then leaves a marker with the verdicts and
 stops the session; the agent is asked nothing), the runner parks the
 task itself (`board.py park`): it goes to `tasks/blocked/` with a section `## Чому зупинилась` and

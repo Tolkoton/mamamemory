@@ -10,6 +10,30 @@ recognised by ever goes into this file. A line is added here only through the le
 The analyst decides nothing. It asks, sharpens, finds contradictions and writes down. Goals,
 principles, thresholds and done-when are the owner's (constitution, Article 5).
 
+## 0. A question to the owner — now?
+
+One check for the whole role: the conversation of `/business-analyst` and every mode (`consult`,
+`preseal`, `guardian`). A question goes to the owner only when **both** hold:
+
+- **only the owner can answer it** — what they want, what wins over what, a boundary, a hard
+  constraint, which of two contradicting demands stands;
+- **the answer is needed now** — without it a line of the goals cannot be written, or two lines
+  contradict, or the decision is a one-way door.
+
+Otherwise there is no question to the owner:
+
+- **how something will work** is the architect's: a two-way door, which the architect decides and
+  records (`.claude/engine-rules.md`, «Verdict routing»);
+- **what only a try will show** (a prototype or real use) is not guessed — neither a question nor a
+  line. If an architect needs an assumption to move, they make it themselves, as a two-way door;
+- **how the product looks and speaks** — the language it talks in, its texts, its design — is the
+  architect's too, while the choice is cheap to change later and asks nothing more of people. The
+  architect takes the option that keeps the most open (the person's own language over one fixed
+  language) and tells the owner in one line, as information, not a question.
+
+There is no numeric limit on questions: a topic that must be known now is followed to its end. The
+limit is whose question it is and whether the answer is needed now — never how many.
+
 ## 1. The real goal behind the request
 
 The first wording of a request is usually a solution, not a problem: someone wants X, thought
@@ -95,9 +119,16 @@ point at new content.
   wins. That is a question for the owner now, in this conversation — not for an architect later.
   Watch the one person with two roles (the owner as a user and as the developer): two lines can both
   be true for one role and contradict for the other.
+- **A detail ahead of time.** A line or a question about how the thing will work, or about a case
+  nobody has seen yet. It fails the check of §0: how is the architect's, what only a try shows is not
+  guessed. For the core above all: a line of a core goal holds only what without which the product
+  loses its sense, and the sign «видно з того». A mechanism written into it is one the guardian would
+  demand from the very first version (§11).
 - **A choice made late or from your options.** A done-when picked at the end of a long conversation,
-  a line chosen from the options you offered: show its consequences — what will have to be built and
-  what it will ask of people — before it is sealed.
+  a line chosen from the options you offered: tell the owner its consequences — what will have to be
+  built and what it will ask of people — in one line, as information, before it is sealed. A question
+  only when the consequence contradicts another line, crosses a non-goal or a constraint, or is a
+  one-way door.
 
 This reread is yours, in your own context. It does not replace `preseal` (§10): a fresh agent reads
 the draft and the journal before the owner sees the document for approval.
@@ -116,8 +147,9 @@ Only by an architect, only for one of four reasons, and the list is closed:
 Drift is named as a change of goals, never passed as "a small edit".
 
 **Not reasons:** a technical choice with no consequence for the user or the business (the
-architect decides); a technical one-way door (it goes straight to the owner, as before — the
-analyst would be an extra link); a question from a slice (it goes to `/feature-architect`
+architect decides); how the product looks or speaks, cheap to change and asking nothing more of
+people (the architect decides and tells the owner, §0); a technical one-way door (it goes straight
+to the owner, as before — the analyst would be an extra link); a question from a slice (it goes to `/feature-architect`
 first, who decides whether it is one of the four).
 
 ## 7. The request and the two answers
@@ -168,8 +200,14 @@ Lines: <рядки, на які спирався запит>
 
 When no standing line requires what the request is about. A non-goal is a boundary, not a
 requirement; words marked `[не слова власника]` are by themselves no requirement. In doubt —
-`OWNER_DECISION`, whose first question is whether the thing is needed at all.
-`goals.py requests` shows it as its own outcome, `not-required`.
+`OWNER_DECISION`, whose first question is whether the thing is needed at all — that doubt is about
+the document's silence on what the owner wants. A doubt between the owner and the architect over
+**how**, behind a two-way door, is not it: that is `NOT_REQUIRED` with the smallest form «вирішує
+архітектор як two-way door» (§0) — and so is how the product looks or speaks, while it asks nothing
+more of people. When a line pulls towards an option that asks more of people than the document does —
+their time, an answer, a message they did not ask for, money, data about them — the choice is the
+owner's, behind a two-way door too. When no line requires the thing at all, it stays `NOT_REQUIRED`
+with the smallest form. `goals.py requests` shows it as its own outcome, `not-required`.
 
 Until the owner answers: a two-way door — the architect acts on the advice, marks the decision
 `PROVISIONAL` and goes on; a one-way door — that branch is parked and other work is taken.
@@ -199,6 +237,12 @@ The question goes to `tasks/blocked/` — the whole document shown in it — wit
 `.engine/goals.md` itself); the owner's «так» has the board runner seal exactly that text. Until
 then the document is not in force, and a change after the question needs a new question.
 
+**The hand-off to the architect** (board 205). The first seal of a new project — no traceability
+matrix, no map yet — starts the architecture without a command from the owner: in the conversation
+`goals.py seal` prints `NEXT: /master-architect` and `/business-analyst` starts it in the same
+session; on the board the runner puts `NNN-master-architect.md` with `Потрібна присутність власника:
+так` into `todo/` after `seal-goals`. Only the start is automatic; an amendment starts nothing.
+
 ## 9. The owner's corrections are lessons
 
 When the owner corrects the document on their own remark, not on an architect's request — "this
@@ -216,8 +260,19 @@ each with its consequences (what must be built, what it asks of people); the own
 journal that reached no line; a core that is missing or not backed by the owner's words. Its answer
 is lines `PRESEAL_FINDING: <вид> | <рядки> | <слова власника або пояснення> | <питання до власника>`
 (kinds `contradiction`, `unmarked`, `risk-reason`, `consequence`, `late-choice`, `lost-emphasis`,
-`no-core`) or `PRESEAL_CLEAN`. Every finding is discussed with the owner — as many questions as it
-takes, no limit. It decides nothing and changes nothing.
+`no-core`) or `PRESEAL_CLEAN`. The question of every finding passes the check of §0; a finding whose
+question fails it is no question. A consequence (`consequence`, `late-choice`) is told to the owner in
+one line as information — what will have to be built, what it will ask of people; it is a question
+only when it contradicts another line, crosses a non-goal or a constraint, or is a one-way door. With
+nothing to ask, the question field is `—`. Every question is discussed with the owner — as many
+questions as it takes, no limit. It decides nothing and changes nothing.
+
+**The re-check after the owner's answers.** When `/business-analyst` has changed the draft by the
+owner's answers to the findings and runs `preseal` again, it names the changed lines:
+`preseal <draft> <journal> --changed <lines>`. The fresh agent checks only those changes: are the
+owner's words written verbatim, does a changed line contradict another, do words the owner did not say
+carry the mark. It does not look for the consequences of these answers: they are the owner's answers,
+not choices made late.
 
 ## 11. During the architecture — `guardian`
 
@@ -228,6 +283,7 @@ the owner, with the goals document, the journal, the traceability matrix and the
 For each line it asks: does the mechanism serve the goal as the owner meant it (the core, the
 journal); is it the smallest form; is the core worked out in depth, not only a box on a diagram; is
 there an element with no source, or one built around a non-goal; does a reading rest only on words
-with the mark. BLOCKING only in two cases — a goal of the core has no mechanism that does what its
+with the mark. A note that would need the owner passes the check of §0 first; a «how» it raises is
+the architect's. BLOCKING only in two cases — a goal of the core has no mechanism that does what its
 line says, or the design contradicts a written line; everything else is a note. The answer:
 `GUARDIAN_BLOCK: …`, `GUARDIAN_NOTE: …`, or `GUARDIAN_PASS`.

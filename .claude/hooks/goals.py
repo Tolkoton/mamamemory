@@ -2,7 +2,7 @@
 """The goals document (level 0) and what refers to it: the mechanics, and nothing but the mechanics.
 
     python3 .claude/hooks/goals.py status                    # is there a document, is it the approved one
-    python3 .claude/hooks/goals.py seal [--owner-approved]   # after the owner approved it
+    python3 .claude/hooks/goals.py seal [--owner-approved]   # after the owner approved it; the first one, in a new project: NEXT /master-architect
     python3 .claude/hooks/goals.py check [FILE ...]          # the document, and the decisions' «Звірка з цілями»
     python3 .claude/hooks/goals.py unreconciled              # decisions that cite no line of the document
     python3 .claude/hooks/goals.py affected ID [ID ...]      # decisions that cite these lines
@@ -29,6 +29,10 @@ the line it names exists, still stands, and says today what it said when it was 
     in the owner's own terminal, or `amend` — the board runner's action on the owner's «так»
     under a question that offers `Дія runner-а: amend-goals <sha256 of .engine/goals/proposed.md>`.
     Inside a Claude Code session none of the three works: an agent can type them all;
+  * the first seal of a new project (no traceability matrix, no map yet) hands off to the architect
+    (board 205): `seal` prints `NEXT: /master-architect`, and after `first-seal` the board runner puts
+    the architecture task on the board (`board.py architect-task`). Not after an amendment: there
+    `.engine/goals/to-review.md` lists what the architects reread;
   * numbers are permanent: a line that no longer holds stays, struck through (`- ~~G2. …~~`).
     `proposal` and `amend` refuse an amendment that drops or revives a number or does not raise
     the version;
@@ -439,6 +443,16 @@ def write_seal(root: Path) -> str:
     return value
 
 
+def architecture_begun(root: Path) -> bool:
+    """A project whose architecture has a first file: the matrix or a map. Before it, a new project (board 205)."""
+    return any((root / rel).is_file() for rel in (TRACE_REL, *MAPS))
+
+
+HANDOFF = ("NEXT: /master-architect — a new project: the architecture starts now, without a command from the owner "
+           "(board 205). The owner is in the conversation: start it in this session; nobody is: the board runner puts the task "
+           "on the board. It begins with its stop «Читання цілей»: the start is automatic, the approvals stay the owner's.")
+
+
 def cmd_seal(root: Path, owner_flag: bool, in_session: bool) -> int:
     now = state(root)
     if now == "absent":
@@ -468,6 +482,8 @@ def cmd_seal(root: Path, owner_flag: bool, in_session: bool) -> int:
         print(f"REFUSED: {core}", file=sys.stderr)
         return EXIT_REFUSED
     print(f"sealed {GOALS_REL}  sha256 {write_seal(root)[:12]}…  -> {STATE_REL.as_posix()}")
+    if now == "unsealed" and not architecture_begun(root):
+        print(HANDOFF)
     return EXIT_OK
 
 

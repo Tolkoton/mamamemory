@@ -9,7 +9,8 @@ Ukrainian by the script.
 Maintenance **looks and reports**. It does not remove, tidy, rename or update anything: what is
 worth work becomes a task proposal in the report, and the one thing that may follow at once — a
 handful of small dependency updates — is done by the board runner on the owner's word, not by
-you. Changing packages is the owner's act (ask-gated), and unattended you never call it.
+you. Updating the versions of packages is the owner's act, and you never run it. (Adding a package the code
+needs is the builder's own call — board 302 — and not this command's business either.)
 
 ## 1. The report
 

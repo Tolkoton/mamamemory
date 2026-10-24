@@ -15,9 +15,9 @@ disabling one, the contract's fingerprint) and `unattended.md` (the mode file, p
   must carry the check itself.
 
 ## Permissions
-- **Ask-gated** — only on the human's explicit request in the current turn: `git push`,
-  `rebase`, `merge`, `cherry-pick`, `revert`; `gh pr create/merge`, `gh release`; adding or
-  removing packages (uv, poetry, pip, npm, cargo…); migrations (alembic, `manage.py migrate`);
+- **Ask-gated** — only on the human's explicit request in the current turn: `git push`, `rebase`,
+  `merge`, `cherry-pick`, `revert`; `gh pr create/merge`, `gh release`; an install outside the
+  project (`pip`, `pipx`, `gem install`, `-g`); migrations (alembic, `manage.py migrate`);
   `docker push/run`, `docker compose up`. Unattended, never invoke one (nobody answers): put it
   on the board (`board.py open-item --to blocked`: command, what waits, question) and continue.
   Cloud on `CLOUD_COMMIT_POLICY="session-branch"`: its own `claude/` branch to `origin` goes unasked.
@@ -25,9 +25,9 @@ disabling one, the contract's fingerprint) and `unattended.md` (the mode file, p
   `git reset --hard origin*`, history rewriting, `git clean -fdx`; reading or editing `.env`,
   `secrets/`, SSH/GPG/AWS credentials; editing migrations and `.github/workflows/`; publishing
   packages; piping curl or wget into a shell; `sudo`. If asked, refuse and hand it to the human.
-- **Auto-allowed**, no hesitation: editing non-protected files; tests, lint, type-check,
-  format; read-only git; `git add`, `switch`, `checkout -b`, `stash`, `tag`; file utilities;
-  fetching documentation. If you are wondering whether to ask for one of these — don't.
+- **Auto-allowed** — never ask for these: editing non-protected files; tests, lint, type-check, format;
+  read-only git; `git add`, `switch`, `checkout -b`, `stash`, `tag`; file utilities; docs; the project's
+  packages via its own manager (`uv`/`npm`/`cargo`… add/remove; lock file in that commit, why in the report).
 
 ## When the Stop gate fails
 `verify-on-stop.sh` runs the project's lint, type-check and tests when code changed, and blocks

@@ -36,6 +36,12 @@ journal of the conversation, the project's own: the time (UTC), your question, t
 verbatim. Append only; nothing in it is ever rewritten. It is what `preseal` and the guardian read
 to know what the owner actually said.
 
+**Ask only what is needed now (method §0).** A question goes to the owner only when only the owner
+can answer it and the answer is needed now — a line cannot be written without it, two lines
+contradict, or the decision is a one-way door. How something will work is the architect's; what only
+a prototype or real use will show is neither asked nor written. At step 0 the document is a
+direction: the core, what wins over what, the boundaries.
+
 1. **Who and why** (method §2), then the **five opening questions** (§3), one at a time. Push
    back on vagueness; a solution offered as a goal gets the step back and the whys (§1).
 2. **Goals.** Each must be observable: "a convenient service" is not accepted — ask what the
@@ -59,8 +65,8 @@ after it: your formulation, a reason «бо …», a sign «видно з тог
 hints are fine; a line the owner chose from your options is marked too, and goes to the pre-seal
 check with its consequences. Approval does not remove a mark.
 
-Then write the draft in the format of `templates/project/.engine/goals.md` (the project's own
-copy is `.engine/goals.md`): one numbered line per item, `Версія: 1`, a first line in «Зміни».
+Then write the draft in the format of `.claude/references/goals-template.md` (an engine file, in
+every installed project; the seed of `.engine/goals.md` is the same text): one numbered line per item, `Версія: 1`, a first line in «Зміни».
 As short as the project allows — there is no size limit, and the simplifier reads this
 document like any other standing text. Reread the draft against the traps (§5) and fix what
 you find before showing it.
@@ -68,13 +74,24 @@ you find before showing it.
 **The pre-seal check.** Before you show the document for approval, start the agent
 `business-analyst` in mode `preseal`, fresh, with `preseal .engine/goals.md .engine/goals/interview.md`
 and nothing else. Discuss every `PRESEAL_FINDING` with the owner — as many questions as it takes,
-there is no limit — and change the draft by the owner's answers (each answer into the journal). The
-§5 reread stays; it does not replace `preseal`.
+there is no limit — and change the draft by the owner's answers (each answer into the journal). A
+finding whose question is `—` is told to the owner as information, not asked. Then run `preseal`
+again, fresh, with `--changed <lines>` naming the lines the answers changed: that run checks only
+those changes and does not look for the consequences of the owner's answers. The §5 reread stays; it
+does not replace `preseal`.
 
 **Approval.** Only then show the owner the whole document and ask for approval in so many words. Only
-after an explicit yes: `python3 .claude/hooks/goals.py seal`. Then tell the owner the next
-command — `/master-architect` in a new project. With nobody in the conversation `seal` refuses:
-the approval is asked on the task board (method §8, «The first seal without the owner»).
+after an explicit yes: `python3 .claude/hooks/goals.py seal`, then `overseer_phase.py clear`.
+
+**The hand-off (board 205).** When `seal` printed `NEXT: /master-architect` (a first seal, and no
+matrix or map yet: a new project), the architecture starts now, without a command from the owner:
+tell the owner so in one line and start `/master-architect` yourself in this session (the Skill
+tool, `master-architect`). Only the start is automatic: the architect stops for the owner at
+«Читання цілей», at the end of every stage and at every one-way door, as always. Without that line
+(the architecture has begun) nothing starts. With nobody in the conversation `seal` refuses: the
+approval is asked on the task board (method §8, «The first seal without the owner»), and after the
+owner's «так» the runner puts the `/master-architect` task, with the owner present, into `todo/`.
+An amendment (§8) starts nothing: `.engine/goals/to-review.md` lists what the architects reread.
 
 # Changing the document
 

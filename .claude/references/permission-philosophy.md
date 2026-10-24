@@ -21,7 +21,7 @@ The cost is irreversible damage in the worst case. Includes:
 The cost is "I shared this with the world" or "I changed long-term state". Includes:
 
 - **`git push`, `gh pr create/merge`, `gh release`**: pushing affects the remote (an ordinary push is governed by this `ask` rule alone since 2026-10-01; the hook refuses only its dangerous forms — forced, deleting a remote branch, into `main` or `stable` — board 017); PRs and releases are intent statements. Worth one explicit "yes" each.
-- **Dependency adds/removes**: `uv add`, `poetry add`, `pip install`. Adding a dependency is a long-term commitment (licenses, security, transitive bloat). Defer to the human.
+- **Installs outside the project's environment**: `pip install`, `pipx install`, `gem install`, a global `npm install -g` / `pnpm add -g` / `yarn global`. They change the machine, not the project's manifest and lock file, so nothing in the repository records them.
 - **Schema migrations**: `alembic upgrade/downgrade/revision`, `python manage.py migrate/makemigrations`. Even on dev DB, the schema delta is something the human should consciously approve.
 - **`docker push`, `docker run`, `docker compose up`**: starting containers can hog ports, create state on disk, or push images. Not catastrophic but worth confirming.
 
@@ -35,6 +35,7 @@ Everything else routine. The cost is at most some wasted time, recoverable by un
 - **Modify-local git**: `add`, `restore`, `checkout -b`, `switch`, `stash`, `tag`, `branch`. These only affect the local repo and are easy to undo.
 - **All test/lint/format tools**: pytest, ruff, mypy, black, isort, coverage, bandit.
 - **Toolchain wrappers**: `uv run`, `poetry run`, `python -m`.
+- **The project's packages through its own manager**: `uv add/remove`, `poetry add/remove`, `npm install/uninstall`, `yarn`/`pnpm add/remove`, `cargo add/remove`, `go get`, `go mod tidy`, `bundle add/remove`. Board 302 (owner, 2026-10-23): which library the code needs is the engineer's call, not the owner's. The hygiene is the agent's own: the lock file in the same commit, the package and why it is needed named in the task's report. Updating versions is a different act and stays the owner's (`/maintain`).
 - **File utilities**: `ls`, `cat`, `grep`, `rg`, `find`, `head`, `tail`, `jq`, `tree`. Pure reads or local-only operations.
 - **Most subprocess reads**: `docker ps/logs/inspect`, `kubectl get/describe/logs`. Inspection is fine; mutation needs `ask`.
 - **Documentation fetches**: Python docs, framework docs (FastAPI, Django, Pydantic, SQLAlchemy), GitHub, Stack Overflow.
@@ -60,10 +61,9 @@ You can defeat all three by editing the hook scripts. They're yours. But out of 
 
 ## Common edits and their tradeoffs
 
-### Moving `Bash(uv add *)` from ask to allow
+### Putting `Bash(uv add:*)` back into ask
 
-**Pro**: no prompt when Claude needs to add a dependency mid-task.
-**Con**: Claude can quietly grow your `pyproject.toml`. You'll discover unwanted deps at lockfile-review time. Some teams prefer this; some don't.
+The engine allows it since board 302: the agent writes the code and knows what it needs, and every added package is named in the task's report and lands with its lock file in one commit, where the review sees it. A team that wants a beat before each new dependency can put the project manager's add/remove rules back into its own `ask` list; `engine.py update` then reports `settings.json` as changed by the project.
 
 ### Adding `Bash(git push *)` to allow
 

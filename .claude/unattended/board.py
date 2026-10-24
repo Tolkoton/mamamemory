@@ -61,6 +61,8 @@ exception reads only: `review` takes the board from the work branch in origin (b
     board.py maintain-task [--today YYYY-MM-DD]
                                      the runner's weekly call: put the maintenance task into todo/
                                      when it is due (see THE MAINTENANCE TASK); prints its path
+    board.py architect-task          the runner's call after `seal-goals` applied: put the architecture
+                                     task into todo/ in a new project (see THE ARCHITECTURE TASK); prints its path
     board.py cleanup-task [--today YYYY-MM-DD]
                                      the runner's call when nothing can be taken: put the cleanup
                                      task into todo/ when it is due (see THE CLEANUP TASK); prints its path
@@ -134,7 +136,17 @@ not while a cleanup task waits in todo/, doing/ or blocked/; not sooner than CLE
 (`.claude/project.env`; empty — 1, `0` — never) after the newest one, wherever it lies; and not in
 a project without `.claude/hooks/simplifier.py`. One already in todo/ waits the same way while the
 owner's attended task is in doing/ (board 838): `next` does not offer it and `start` refuses it —
-two authors in the same files would conflict at the merge. The engine schedules nothing else.
+two authors in the same files would conflict at the merge.
+
+THE ARCHITECTURE TASK (board 205). Sealed goals in a new project hand off to the architect without a
+command from the owner. When the runner has put the first seal on the owner's «так» (`seal-goals`)
+it asks `architect-task`, which puts `NNN-master-architect.md` into todo/: a task to run
+`/master-architect`, with `Потрібна присутність власника: так` — the architect stops for the owner
+at «Читання цілей», before anything is designed, so a session without the owner would only park;
+the runner never takes it, the owner's review shows it as waiting for them. Not when the goals are
+not sealed, not when the architecture has begun (the traceability matrix or a map exists — then an
+amendment's `.engine/goals/to-review.md` is the architects' work, not a new start), not when one
+already lies in any column. The engine schedules nothing else.
 
 A GATE ESCALATION HOLDS A TASK (board 301). While the Stop gate's escalation is open the overseer's
 PASS is not accepted for the work it covers (.claude/hooks/gate_allows.py, `escalation_over`), so a
@@ -312,6 +324,7 @@ ACTION_FILES = {"apply-settings": "docs/tasks/settings.json", "amend-goals": ".e
                 SEAL_ACTION: ".engine/goals.md", DEPS_ACTION: ".engine/maintain/updates.json"}  # the file whose sha256 the offer names
 MAINTAIN_NAME = re.compile(r"^\d{3,}-maintain-(\d{4}-\d\d-\d\d)(?:\.md)?$")
 MAINTAIN_COMMAND, MAINTAIN_DAYS = ".claude/commands/maintain.md", 7
+ARCHITECT_NAME = re.compile(r"^\d{3,}-master-architect(?:\.md)?$")
 CLEANUP_NAME = re.compile(r"^\d{3,}-cleanup-(\d{4}-\d\d-\d\d)(?:\.md)?$")
 CLEANUP_SCRIPT, CLEANUP_DAYS = ".claude/hooks/simplifier.py", 1
 ITEM = re.compile(r"^Відкритий пункт:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
@@ -1150,7 +1163,8 @@ RULE_OUTCOMES = {
                              f"було не чисте, перевірки не зелені ще до оновлень або гілка не `unattended/*` (подробиці — `{DEPS_RESULT}` або журнал на "
                              "сервері: .claude/state/board/logs/owner-action.log). Агентові: напиши причину у звіт; оновлювати знову — лише новим питанням.",
     (SEAL_ACTION, "applied"): "Дію виконано ({now}, runner): {action} — за відповіддю власника «так» документ цілей `.engine/goals.md` запечатано таким, "
-                              "як він був у запитанні: він чинний. Агентові: переконайся (`goals.py status`) і закрий задачу звітом.",
+                              "як він був у запитанні: він чинний; у новому проєкті runner поклав у todo/ задачу `/master-architect` з присутністю власника. "
+                              "Агентові: переконайся (`goals.py status`) і закрий задачу звітом.",
     (SEAL_ACTION, "failed"): "Дію не виконано ({now}, runner): {action} — документ цілей не запечатано: у ньому немає жодного нумерованого рядка, номер "
                              "ужито двічі, або документ уже затверджували і відтоді змінили — тоді це поправка, `amend-goals` (журнал на сервері: "
                              ".claude/state/board/logs/owner-action.log). Агентові: виправ і спитай знову.",
@@ -1300,6 +1314,41 @@ def maintain_task(board: Board, root: Path, today: date) -> Path | None:
     return path
 
 
+def architect_task(board: Board, root: Path) -> Path | None:
+    """Put the architecture task into todo/ after the first seal in a new project (THE ARCHITECTURE TASK); None — not now."""
+    import goals  # the hooks' directory is on the path (above)
+
+    if goals.state(root) != "sealed" or goals.architecture_begun(root):
+        return None
+    if any(ARCHITECT_NAME.match(p.name) for column in COLUMNS for p in (board.tasks / column).glob("*")):
+        return None
+    number = _own_number(board)
+    path = board.tasks / "todo" / f"{number:03d}-master-architect.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"""# {number:03d} — Архітектура проєкту за запечатаними цілями
+
+Залежить від: —
+Потрібна присутність власника: так
+Аудит потрібен: ні
+
+Цю задачу поклав runner: власник відповів «так» на документ цілей (`seal-goals`), документ
+запечатано, а архітектури в проєкті ще немає (задача 205). Без присутності власника її не беруть:
+`/master-architect` спиняється у власника вже на першому кроці, «Читання цілей».
+
+## Що зробити
+Виконай `/master-architect` (`.claude/commands/master-architect.md`) разом із власником, від M1, крок 1 —
+зупинки «Читання цілей». Автоматичний лише старт: кожне однобічне рішення, кінець кожного етапу
+й читання цілей затверджує власник (constitution, Art. 5).
+
+## Готово, коли
+- Матриця `.engine/architecture/traceability.md` і карти етапів, які власник затвердив у розмові.
+- У `report.md` — що затверджено і що лишилось на наступну сесію з власником.
+
+## Питання до власника
+""", encoding="utf-8")
+    return path
+
+
 def cleanup_task(board: Board, root: Path, today: date) -> Path | None:
     """Put the cleanup task into todo/ when the board is idle and it is due (THE CLEANUP TASK); None — not now."""
     every = _every(root, "CLEANUP_EVERY_DAYS", CLEANUP_DAYS)
@@ -1387,14 +1436,12 @@ def in_hand(tasks: Path) -> str:
 ANOMALIES_HEAD = journal.JOURNALS["anomalies"].head
 RUNNER = "runner"  # who writes the journal unless told otherwise
 WHY = "## Чому зупинилась"
-# reason → (what happened, the question). {n} is the runner's number: attempts, hours, dollars.
+# reason → (what happened, the question). {n} is the runner's number: attempts, dollars.
+# No reason is about time (board 404): an old `deadline` record in a task or the journal is plain text and stays readable.
 PARK_REASONS = {
     "no-commit": ("{n} спроб(и) поспіль не дали жодного commit-а",
                   ("Задача застрягла: агент кілька спроб поспіль нічого не закомітив. Що робити далі? Будь-яка відповідь поверне задачу "
                   "в чергу з новим лічильником спроб; вказівку агентові напишіть тут же.")),
-    "deadline": ("задача відкрита довше за {n} год",
-                 ("Задача тривала довше дозволеного. Що робити далі? Будь-яка відповідь поверне задачу в чергу з новим відліком часу; "
-                 "вказівку агентові (наприклад, як її розбити) напишіть тут же.")),
     "budget": ("спрацював запобіжник runner-а від зациклення (`BOARD_MAX_USD`): задача витратила {n} USD",
                ("Задача дійшла до запобіжника від зациклення (`BOARD_MAX_USD`). Це не межа ціни: роботу не обрізано, її зупинено з "
                "питанням. Продовжити? Будь-яка відповідь поверне задачу в чергу й дасть їй ще стільки ж; якщо продовжувати не треба — "
@@ -1623,6 +1670,7 @@ def main() -> int:
     commands.add_parser("gate-reject").add_argument("name")
     commands.add_parser("owner-actions")
     commands.add_parser("action-line").add_argument("action", choices=sorted(ACTION_FILES))
+    commands.add_parser("architect-task")
     commands.add_parser("maintain-task").add_argument("--today", default=os.environ.get("BOARD_TODAY") or None, help="YYYY-MM-DD (default: today, UTC)")
     commands.add_parser("cleanup-task").add_argument("--today", default=os.environ.get("BOARD_TODAY") or None, help="YYYY-MM-DD (default: today, UTC)")
     action_done_parser = commands.add_parser("action-done")
@@ -1721,6 +1769,11 @@ def main() -> int:
             print(f"board: {ACTION_FILES[args.action]} is missing; there is nothing to offer", file=sys.stderr)
             return EXIT_REFUSED
         print(action_line(root, args.action))
+        return 0
+    if args.command == "architect-task":
+        placed = architect_task(board, root)
+        if placed:
+            print(board.shown(placed))
         return 0
     if args.command in ("maintain-task", "cleanup-task"):
         place = maintain_task if args.command == "maintain-task" else cleanup_task
