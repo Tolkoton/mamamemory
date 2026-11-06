@@ -1,0 +1,9 @@
+.venv
+.git
+.engine
+.claude
+tasks
+poc
+tests
+docs
+**/__pycache__

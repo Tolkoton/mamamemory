@@ -1,0 +1,20 @@
+flowchart TB
+    Mama([Мама<br/>Android, голос])
+    subgraph App[mamamemory]
+        A[Асистент<br/>одна розмова: розуміє,<br/>чого хоче мама, і веде далі<br/>+ Гайд G5]
+        PL[Планування — ЯДРО<br/>Задача, План]
+        CS[Справи<br/>Справа, Матеріал,<br/>Розкладач, Журнал роботи]
+        ID[Вхід<br/>мамин Google-акаунт]
+    end
+    subgraph G[Google — зовнішнє]
+        GCal[(Calendar)]
+        GTasks[(Tasks)]
+        GSign[Вхід Google]
+    end
+    Mama --> A
+    A --> PL
+    A --> CS
+    ID --> GSign
+    PL -->|конформіст| GCal
+    PL -->|конформіст| GTasks
+    ID -.дозвіл від імені мами.-> PL
