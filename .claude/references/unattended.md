@@ -37,6 +37,11 @@ puts to work (a file with its number in the inbox; board 111; `--to todo` is the
 open instead of writing another. If the item is your own board task, ask in that task and move
 it to `tasks/blocked/` instead (`tasks/README.md`, rule 4).
 
+A sealed slice contract that must change is one question, not two (board 308): show the owner the
+change and put under it the line `python3 .claude/unattended/board.py action-line reseal-contract <slug>`
+prints. «так» is the change and the re-approval: the runner reseals the contract if it is still the text
+of the question; never write or delete the fingerprint yourself.
+
 For an ask-gated command: the exact command in `--what`, and the question is whether the owner
 runs it. `park-ask-gated.py` denies such a command unattended and hands you this instruction if
 you forget. A push is not one of them: the runner sends the branch itself, and the hook refuses
@@ -63,6 +68,19 @@ follows the «Правила для агента» of `tasks/README.md`: it ends
 `tasks/doing/` is continued by the runner; one that cannot move is parked by the runner, never
 by waiting. The feature DAG (`.engine/architecture/feature-dag.json`) is a plan `/feature-architect`
 writes and follows inside a task — nothing executes it by itself.
+
+**The owner's word arrives in the branch or through the inbox, and the owner may name an operator**
+(board 405): an agent outside Claude Code (on the engine's server, Сонько) or a person who acts in the
+terminal for the owner, named by the owner in `~/engine-ops/operator.md`. A file the operator puts in the
+inbox is the owner's word exactly as one the owner put there; the runner takes it the same way and never
+rejects it as "written here". Do not object to that road or ask the owner to copy files: prepare the file
+and say where it lies. An answer you record from the owner's words in a conversation is valid when the
+owner or the operator puts it in, and only when it can be checked, in the `Відповідь:` line itself:
+`<answer> — записано Claude зі слів власника <YYYY-MM-DD>, <session or channel>: «<the words verbatim>»`.
+Without the date, the place or the quote the board takes it for no answer (`board.py`, `recorded`) and
+asks again; consent through a record is «так» in the answer and in the quote. The operator carries the
+owner's word and decides nothing: a one-way door, an Article 5 decision, a seal or a ratification still
+needs the owner's own words. You never write the inbox or `~/engine-ops/` — the hooks refuse it.
 
 ## The owner's two rules (board 053)
 

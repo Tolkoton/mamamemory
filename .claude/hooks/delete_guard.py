@@ -11,7 +11,9 @@ WHAT IS A DELETION. From the diff against the base (HEAD; the index at pre_commi
 class or a file of working code that is gone, or more than DELETE_GUARD_LINES lines (default 20)
 removed inside one function. Working code is a file with a code extension (CODE_EXTENSIONS) that is
 not a test. A move is not a deletion: a function or class whose name is defined anew elsewhere in
-the same change, and a removed line that is added again anywhere in the same change, do not count.
+the same change, or whose body (without the `def`/`class` line, its own name aside) a definition new
+to the same change carries under another name, and a removed line that is added again anywhere in
+the same change, do not count.
 For a language other than Python there are no names: the unit is the file, and what is counted is
 its removed lines.
 
@@ -77,6 +79,7 @@ class Definition:
     start: int
     end: int
     body: set[int]  # the lines a test would execute: function bodies, without the docstring
+    shape: tuple[str, ...] = ()  # the code lines of `body`, stripped, its own name as \0: what a rename keeps
 
 
 @dataclass
@@ -239,6 +242,11 @@ def definitions(text: str | None) -> dict[str, Definition] | None:
         return executed
 
     visit(tree, "")
+    lines = text.splitlines()
+    for item in found.values():
+        own = re.compile(rf"\b{re.escape(bare(item.name))}\b")
+        item.shape = tuple(own.sub("\0", lines[n - 1].strip()) for n in sorted(item.body)
+                           if n <= len(lines) and code_line(lines[n - 1]))
     return found
 
 
@@ -266,13 +274,24 @@ def lost_lines(change: FileChange, pool: Counter[str], skip: set[int]) -> list[i
     return lost
 
 
-def gone_units(rel: str, gone: dict[str, Definition], moved: set[str]) -> list[Unit]:
-    """The definitions that left the file and were not defined anew elsewhere in the change."""
+@dataclass
+class Moved:
+    """What the change defines anew: the names, and the bodies a renamed move would keep."""
+    names: set[str] = field(default_factory=set)
+    shapes: set[tuple[str, ...]] = field(default_factory=set)
+
+    def has(self, item: Definition) -> bool:
+        return bare(item.name) in self.names or (bool(item.shape) and item.shape in self.shapes)
+
+
+def gone_units(rel: str, gone: dict[str, Definition], moved: Moved) -> list[Unit]:
+    """The definitions that left the file and were not defined anew elsewhere in the change, under
+    their name or with the same body under another."""
     units = []
     for item in gone.values():
         # A method of a class that is gone too is reported with the class, once.
         inside_gone = "." in item.name and item.name.rsplit(".", 1)[0] in gone
-        if not inside_gone and bare(item.name) not in moved:
+        if not inside_gone and not moved.has(item):
             units.append(Unit(rel, item.kind, item.name, item.start, set(item.body)))
     return units
 
@@ -290,7 +309,7 @@ def line_units(rel: str, lost: list[int], kept: list[Definition], limit: int) ->
 
 
 def units_of_python(rel: str, change: FileChange, old: dict[str, Definition], new: dict[str, Definition] | None,
-                    moved: set[str], pool: Counter[str], limit: int) -> list[Unit]:
+                    moved: Moved, pool: Counter[str], limit: int) -> list[Unit]:
     if change.deleted and not old:
         return [Unit(rel, "file", None, None, set(change.removed))]
     gone = {name: d for name, d in old.items() if new is None or name not in new}
@@ -302,17 +321,20 @@ def units_of_python(rel: str, change: FileChange, old: dict[str, Definition], ne
 Parsed = dict[str, tuple[dict[str, Definition] | None, dict[str, Definition] | None]]
 
 
-def python_view(root: Path, layer: str, ref: str, changes: dict[str, FileChange]) -> tuple[Parsed, set[str]]:
-    """Every changed Python file's definitions before and after, and the names the change defines anew."""
+def python_view(root: Path, layer: str, ref: str, changes: dict[str, FileChange]) -> tuple[Parsed, Moved]:
+    """Every changed Python file's definitions before and after, and what the change defines anew."""
     parsed: Parsed = {}
-    moved: set[str] = set()
+    moved = Moved()
     for rel, change in changes.items():
         if not rel.endswith(".py") or not (change.removed or change.added):
             continue
         old = None if change.created else definitions(read_old(root, ref, rel))
         new = None if change.deleted else definitions(read_new(root, layer, rel))
         parsed[rel] = (old, new)
-        moved.update(bare(name) for name in (new or {}) if name not in (old or {}))
+        for name, item in (new or {}).items():
+            if name not in (old or {}):
+                moved.names.add(bare(name))
+                moved.shapes.add(item.shape)
     return parsed, moved
 
 

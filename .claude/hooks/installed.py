@@ -15,7 +15,12 @@ names the files that are BOTH
     a CRLF checkout matches its LF form, as engine.py reads it).
 
 Both, never one. A file the base already has is the project's from then on: putting a tracked
-project.env back to its seed is a change like any other, and the lock excuses nothing there.
+project.env back to its seed is a change like any other, and the lock excuses nothing there —
+with one exception, AN UPDATE NOT YET COMMITTED (board 120, item 1750): `engine.py update` in a
+project whose engine is committed rewrites files the base has. Such a file is the engine's too
+when the base's own lock recorded exactly the base's blob (the engine's file as it shipped,
+untouched) AND the working lock records exactly the working content. The owner's committed edit
+of an engine file fails the first, a turn's edit after the update the second.
 A file that differs from the lock by one byte is somebody's edit — and then
 
     seed_text(root, rel, ref=None) -> str | None
@@ -42,13 +47,40 @@ LOCK_REL = ".claude/engine-lock.json"
 SEEDS_REL = ".claude/state/install/seeds"
 
 
+def parsed(text: str) -> dict[str, str]:
+    data = json.loads(text)
+    return {str(k): str(v) for part in ("files", "seeds") for k, v in dict(data.get(part) or {}).items()}
+
+
 def recorded(root: Path) -> dict[str, str]:
     """path -> blob id, for the engine's files and the seeded ones. Anything unreadable: nothing."""
     try:
-        data = json.loads((root / LOCK_REL).read_text(encoding="utf-8"))
-        return {str(k): str(v) for part in ("files", "seeds") for k, v in dict(data.get(part) or {}).items()}
+        return parsed((root / LOCK_REL).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError, AttributeError):
         return {}
+
+
+def recorded_at(root: Path, ref: str) -> dict[str, str]:
+    """What the lock of commit `ref` recorded. No such lock, or unreadable: nothing."""
+    out = subprocess.run(["git", "show", f"{ref}:{LOCK_REL}"], cwd=root, capture_output=True, check=False)
+    if out.returncode != 0:
+        return {}
+    try:
+        return parsed(out.stdout.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, TypeError, AttributeError):
+        return {}
+
+
+def base_blobs(root: Path, ref: str, files: list[str]) -> dict[str, str]:
+    """path -> blob id of `files` in commit `ref`."""
+    out = subprocess.run(["git", "ls-tree", "-r", "-z", ref, "--", *files], cwd=root, capture_output=True, check=False)
+    blobs: dict[str, str] = {}
+    for entry in out.stdout.split(b"\0") if out.returncode == 0 else []:
+        meta, _, name = entry.partition(b"\t")
+        parts = meta.split()
+        if name and len(parts) == 3 and parts[1] == b"blob":
+            blobs[name.decode("utf-8", "replace")] = parts[2].decode()
+    return blobs
 
 
 def blob_ids(data: bytes, width: int) -> set[str]:
@@ -83,14 +115,24 @@ def as_installed(root: Path, files: list[str], ref: str | None = None, index: bo
     if not named:
         return set()
     based = in_base(root, ref or "HEAD", named)
+    updated = pristine_in_base(root, ref or "HEAD", sorted(based))
     same: set[str] = set()
     for rel in named:
-        if rel in based:
+        if rel in based and rel not in updated:
             continue
         data = content(root, rel, index)
         if data is not None and lock[rel] in blob_ids(data, len(lock[rel])):
             same.add(rel)
     return same
+
+
+def pristine_in_base(root: Path, ref: str, files: list[str]) -> set[str]:
+    """Of `files` (all in the base), those the base holds exactly as the base's own lock recorded them."""
+    if not files:
+        return set()
+    then = recorded_at(root, ref)
+    blobs = base_blobs(root, ref, [rel for rel in files if rel in then])
+    return {rel for rel, blob in blobs.items() if then.get(rel) == blob}
 
 
 def seed_text(root: Path, rel: str, ref: str | None = None) -> str | None:

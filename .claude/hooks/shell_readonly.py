@@ -57,6 +57,8 @@ GIT_READ_FORMS = {
     "branch": {"--show-current", "--list", "-l", "-a", "-r", "-v", "-vv", "--all", "--remotes", "--contains", "--merged", "--no-merged", "--points-at"},
     "tag": {"--list", "-l", "-n", "--contains", "--points-at", "--verify", "-v"},
 }
+# Git commands that write the repository but leave every file of the working tree as it was.
+GIT_KEEPS_FILES = {"add", "branch", "commit", "config", "gc", "notes", "push", "remote", "tag", "update-index", "update-ref"}
 GIT_TO_PATH = {"clone": -1, "worktree": 1}               # the directory they create: the last word; the first after `add`
 REWRITERS = [                                            # (the command words, what makes it a rewrite, what makes it a check)
     (("ruff", "format"), None, {"--check", "--diff"}),
@@ -150,7 +152,11 @@ def written_by_command(cmd: str, args: list[str]) -> list[str]:
         named += [args[i + 1] for i, w in enumerate(args[:-1]) if w in ("-t", "--target-directory")]
         return named or files[-1:]
     if cmd in sp.IN_PLACE and any(re.match(r"^-[A-Za-z]*i|^--in-place", w) for w in args):
-        return files[1:] if cmd in ("sed", "gsed") and not any(w in VALUE_FLAGS["sed"] for w in args) else files[-1:]
+        # The script is the first word unless a flag carries it; a script emptied as text (shell_text.py)
+        # leaves no word at all, and `sed -i <file>` then names only the file.
+        if cmd in ("sed", "gsed") and not any(w in VALUE_FLAGS["sed"] for w in args):
+            return files[1:] if len(files) > 1 else files
+        return files[-1:]
     if cmd == "dd":
         return [w[3:] for w in args if w.startswith("of=")]
     return []
@@ -173,11 +179,11 @@ def written(seg: sp.Segment) -> list[str]:
     return out
 
 
-def git_write(words: list[str], places: Places) -> str:
-    """Why this git command is refused, or ""."""
+def git_parts(words: list[str]) -> tuple[str, str, list[str]] | None:
+    """(where, subcommand, its arguments) of a git command; None for any other command."""
     cmd, args = command_arguments(words)
     if cmd != "git":
-        return ""
+        return None
     where = "."
     index = 0
     while index < len(args) and args[index].startswith("-"):
@@ -185,6 +191,15 @@ def git_write(words: list[str], places: Places) -> str:
             where = args[index + 1]
         index += 2 if args[index] in GIT_VALUE_OPTIONS else 1
     sub, rest = (args[index], args[index + 1:]) if index < len(args) else ("", [])
+    return where, sub, rest
+
+
+def git_write(words: list[str], places: Places) -> str:
+    """Why this git command is refused, or ""."""
+    parts = git_parts(words)
+    if parts is None:
+        return ""
+    where, sub, rest = parts
     if sub not in GIT_WRITES:
         return ""
     if sub in GIT_READ_FORMS and (set(rest) & GIT_READ_FORMS[sub] or (sub in ("branch", "tag", "stash", "remote", "worktree") and not rest and sub != "stash")):
@@ -233,7 +248,8 @@ def refusal(seg: sp.Segment, places: Places) -> str:
     return ""
 
 
-def verdict(text: str, cwd: str, env: dict[str, str], project: str = "") -> str:
+def readings(text: str, env: dict[str, str]) -> tuple[str, list[sp.Splitter]]:
+    """The text with the names that stand for a known place put in, and the ways to read it."""
     text = re.sub(r"<([\w-]+)>(?=/)", r"\1", text)
     # Before the words are cut: `${NAME}` would fall apart at its braces.
     known = {name: f"/tmp/mktemp-{name}" for name in (m.group(1) for m in MKTEMP.finditer(text))}
@@ -241,16 +257,63 @@ def verdict(text: str, cwd: str, env: dict[str, str], project: str = "") -> str:
     for name, place in known.items():
         text = text.replace("${" + name + "}", place)
         text = re.sub(r"\$" + name + r"\b", place.replace("\\", r"\\"), text)
-    readings: list[sp.Splitter] = [QuoteAware(quotes=True)]
+    found: list[sp.Splitter] = [QuoteAware(quotes=True)]
     if re.search(r"(^|[\s;&|(])(" + "|".join(sorted(SHELLS)) + r")\s+(-\w+\s+)*['\"]", text):
-        readings.append(sp.Splitter(quotes=False))       # the text handed to `bash -c "…"` is a command
-    for splitter in readings:
+        found.append(sp.Splitter(quotes=False))          # the text handed to `bash -c "…"` is a command
+    return text, found
+
+
+def verdict(text: str, cwd: str, env: dict[str, str], project: str = "") -> str:
+    text, splitters = readings(text, env)
+    for splitter in splitters:
         places = Places(cwd, env, project)
         for seg in splitter.split(text):
             reason = refusal(seg, places)
             if reason:
                 return reason
     return ""
+
+
+def segment_writes(seg: sp.Segment, places: Places, found: set[str]) -> bool:
+    """Add to `found` the paths this segment writes; False when the text does not show them all."""
+    words = seg.words()
+    if not seg.call:
+        if sp.command_word(words) in SHELLS:
+            start = next((i for i, w in enumerate(seg.items) if w in ("-c", "eval")), None)
+            inner = sp.Segment(items=seg.items[start + 1:]) if start is not None else None
+            if inner and inner.words():
+                return segment_writes(inner, places, found)
+        if sp.command_word(words) == "cd":
+            places.change_directory(command_arguments(words)[1] and ["cd", *command_arguments(words)[1]] or ["cd"])
+            return True
+        parts = git_parts(words)
+        if git_write(words, places) and parts and parts[1] not in GIT_KEEPS_FILES:
+            return False
+        if rewrite(words, places):
+            return False
+    for word in written(seg):
+        if places.temporary(word):
+            continue
+        path = places.resolve(word)
+        if path is None:
+            return False
+        found.add(path)
+    return True
+
+
+def written_paths(text: str, cwd: str, env: dict[str, str], project: str = "") -> set[str] | None:
+    """Every absolute path outside a temporary place that the command writes (board 305: whose work
+    the Stop gate judges in a shared tree); None when the text does not show where it writes — a
+    path in a variable, a formatter, a git command that changes the working tree. A write made by
+    a script the command only starts is not seen here either, and is not reported as unknown."""
+    text, splitters = readings(text, env)
+    found: set[str] = set()
+    for splitter in splitters:
+        places = Places(cwd, env, project)
+        for seg in splitter.split(text):
+            if not segment_writes(seg, places, found):
+                return None
+    return found
 
 
 def main() -> int:

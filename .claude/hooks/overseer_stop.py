@@ -522,9 +522,12 @@ CONTRACT_CHANGED_REASON = (
     "ESCALATED instead: put it before the owner as a task of the board (`python3 .claude/unattended/board.py "
     "open-item --to blocked --title … --what … --question …`), naming the "
     "contract, what changed (git diff it), and who changed it; then either restore the "
-    "approved contract, or have the OWNER delete the fingerprint and re-plan the slice with "
-    "/plan-slice. Do not delete the fingerprint yourself. The owner may not be at the terminal: if a "
+    "approved contract, or ask the OWNER to approve the change: under the question that shows it, the line "
+    "`python3 .claude/unattended/board.py action-line reseal-contract <slug>` prints — their «так» is the "
+    "change and the new seal at once, the runner reseals (board 308). Do not write or delete the fingerprint "
+    "yourself. The owner may not be at the terminal: if a "
     "board task is in tasks/doing/, write that as a question under «Питання до власника» in the task, "
+    "with that line under it, "
     "leave `Відповідь:` empty and move the task to tasks/blocked/. End the turn with OVERSEER_ESCALATE: "
     '{{"reason": "contract changed after approval", "contract": "{contract}"}}.'
 )

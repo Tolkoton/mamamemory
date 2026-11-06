@@ -9,7 +9,7 @@
   },
 
   "_javascript": {
-    "_comment": "JS/TS projects: nothing extra needed by default — npm/yarn/pnpm add/remove are already in .claude/settings.json's ask list.",
+    "_comment": "JS/TS projects: nothing extra needed by default — the project's own manager (npm/yarn/pnpm add/remove) runs without asking; only global installs (npm install -g, pnpm add -g, yarn global) are in .claude/settings.json's ask list.",
     "env": {}
   },
 

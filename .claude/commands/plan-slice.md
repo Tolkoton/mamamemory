@@ -266,9 +266,14 @@ hand-in is later held to these numbers: one test named `test_I<n>_…` for each.
 `python3 .claude/hooks/contract_fingerprint.py seal .engine/slices/$ARGUMENTS.md`. The
 fingerprint goes to `.claude/state/contracts/$ARGUMENTS.sha256` (machine state, never
 committed). It refuses to overwrite an existing one: if this is a re-plan of a slug that was
-already sealed, that refusal is the owner's gate — do not delete the fingerprint yourself;
-tell the owner the contract changed after approval and let them delete it or choose a new
-slug. From now on the overseer compares the contract against this fingerprint before every
+already sealed, that refusal is the owner's gate — do not write or delete the fingerprint
+yourself. Ask the owner once, showing how the contract changes, and put under the question the line
+`python3 .claude/unattended/board.py action-line reseal-contract $ARGUMENTS` prints (board 308): their
+«так» is the change and the re-approval together, and the runner reseals it; no second question about
+the fingerprint. A contract changed after the question is not resealed — ask again with a new line.
+Attended, the owner who said «так» in the conversation reseals in their own terminal with the same
+line's slug and sha256: `python3 .claude/unattended/owner_action.py reseal-contract "<slug> <sha256>"`
+(it refuses inside a Claude Code session). From now on the overseer compares the contract against this fingerprint before every
 audit and escalates instead of auditing when it has changed.
 
 **The testing manager decides next.** Before any code of this slice, the builder asks

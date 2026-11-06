@@ -7,6 +7,7 @@
     owner_action.py [--root DIR] amend-goals <sha256>
     owner_action.py [--root DIR] seal-goals <sha256>
     owner_action.py [--root DIR] update-deps <sha256>
+    owner_action.py [--root DIR] reseal-contract "<slug> <sha256>"
 
 `apply-settings` is the one way the shared settings change, in the engine's repository and in
 every project it is installed into (board 038): settings_check.py, which ships with the engine,
@@ -51,6 +52,13 @@ What was updated, what was rolled back and with which output is written to
 `.engine/maintain/update-result.md`, in a commit of its own. Commits are made on an `unattended/*`
 branch only: a hook does not see a commit made from a script, so the check is here.
 
+`reseal-contract` is the one way a sealed slice contract is approved again (board 308): the owner
+answered «так» under a question that shows how the contract changes and offers `reseal-contract
+<slug> <sha256 of the new .engine/slices/<slug>.md>`. The answer is the change and the re-approval
+at once: contract_fingerprint.reseal writes the new fingerprint over the old one, and the audit of
+the slice is no longer held. A contract that changed since the question is stale and is not sealed.
+The fingerprint is machine state: nothing is left to commit.
+
 An agent may not edit .claude/settings.json (protect-paths.sh) and may not get there through
 this script either: it refuses inside a Claude Code session, as gate.py --close-escalation does.
 A hook sees the command an agent types, never one run from a script, so the check is here.
@@ -66,6 +74,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -283,8 +292,23 @@ def update_deps(root: Path, approved: str) -> int:
     return result(0, f"Оновлено {updated} з {len(deps)}.")
 
 
+SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def reseal_contract(root: Path, offered: str) -> int:
+    slug, _, approved = offered.partition(" ")
+    if not SLUG.match(slug) or ".." in slug:
+        print(f"owner-action: reseal-contract needs '<slug> <sha256>', got {offered or '(nothing)'}", file=sys.stderr)
+        return EXIT_STALE
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+    import contract_fingerprint
+
+    return EXIT_STALE if contract_fingerprint.reseal(root, root / ".engine/slices" / f"{slug}.md", approved.strip()) else 0
+
+
 ACTIONS = {"apply-settings": apply_settings, "promote-rule": promote_rule, "reject-rule": reject_rule, "amend-goals": amend_goals,
-           "seal-goals": seal_goals, "update-deps": update_deps}
+           "seal-goals": seal_goals, "update-deps": update_deps,
+           "reseal-contract": reseal_contract}
 
 
 def main() -> int:

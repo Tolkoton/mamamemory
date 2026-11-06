@@ -103,6 +103,7 @@ RECORDS = ("tasks/", ".engine/", "sketches/")   # the records and the sketches' 
 QUARANTINE = ("sketches/", ".engine/", "tasks/")   # all a task in ескіз may change (board 099)
 SKETCH_RECORDS = ".engine/sketches/"
 FEATURES, SLICES, SEALS = ".engine/architecture/feature/", ".engine/slices/", ".claude/state/contracts"
+FRESH_AUDIT = "python3 .claude/hooks/overseer_verdict.py request --turn-file <файл ходу>"   # a PASS of another clone is not carried over (board 776, 1748)
 
 
 @dataclass(frozen=True)
@@ -389,11 +390,12 @@ def _digest(root: Path, commit: str, rel: str) -> str:
     return hashlib.sha256(blob.stdout).hexdigest()[:16] if blob.returncode == 0 else "absent"
 
 
-def passed_trees(root: Path, stem: str) -> list[dict[str, Any]]:
+def passed_trees(root: Path, stem: str, commits: list[str]) -> list[dict[str, Any]]:
     """The tree fingerprints of the requests the overseer answered PASS for this task's units — or with no
-    task in doing/ (`-`): the runner's turn back runs when the task is already in done/."""
+    task in doing/ (`-`) whose request's HEAD is one of the task's commits: the runner's turn back runs when
+    the task is already in done/; a `-` PASS from outside them audited another work (board 1749)."""
     _, ov = _hooks()
-    trees = []
+    trees, own = [], set(commits)
     try:
         rows = [json.loads(line) for line in (root / ov.VERDICTS_REL).read_text(encoding="utf-8").splitlines() if line.strip()]
     except (OSError, ValueError):
@@ -407,7 +409,7 @@ def passed_trees(root: Path, stem: str) -> list[dict[str, Any]]:
         except (OSError, ValueError):
             continue
         tree = request.get("tree") if isinstance(request, dict) else None
-        if isinstance(tree, dict) and isinstance(tree.get("files"), dict) and tree.get("head"):
+        if isinstance(tree, dict) and isinstance(tree.get("files"), dict) and tree.get("head") and (named == [stem] or tree["head"] in own):
             trees.append(tree)
     return trees
 
@@ -441,7 +443,7 @@ def unaudited(root: Path, stem: str, commits: list[str]) -> list[str]:
     Read newest first: a file a later covered commit changed needs no PASS of its own (board 754); nor does a
     file a PASS of the task saw as another task's later commit left it (board 1730)."""
     is_code = working_code(root)
-    trees = passed_trees(root, stem)
+    trees = passed_trees(root, stem, commits)
     missing: list[str] = []
     replaced: set[str] = set()   # the files a later covered commit of the task changed: what it left is what a PASS saw
     own = set(commits)
@@ -455,7 +457,8 @@ def unaudited(root: Path, stem: str, commits: list[str]) -> list[str]:
             continue
         subject = _lines(_git(root, "log", "-1", "--format=%s", commit))
         missing.append(f"commit {commit[:10]} («{subject[0] if subject else '?'}») змінив робочий код ({', '.join(code[:5])}"
-                       f"{', …' if len(code) > 5 else ''}), а PASS overseer-а, що бачив саме цей код, у журналі вердиктів немає")
+                       f"{', …' if len(code) > 5 else ''}), а PASS overseer-а, що бачив саме цей код, у журналі вердиктів немає; "
+                       f"якщо audit пройшов в іншому клоні (.claude/state/ не в git), попросіть новий: {FRESH_AUDIT}")
     return missing[::-1]
 
 

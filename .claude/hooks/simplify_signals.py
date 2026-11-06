@@ -170,7 +170,9 @@ def dead_code_signals(root: Path, production: list[str], users: list[str], only:
 
 # A distribution whose import name is not its own name: without the line, a package the code does
 # import would be reported as unused (board 728). Keys are normalized names; a package absent here
-# is looked for under its own name. Short on purpose — a signal is a lead, not a resolver.
+# is looked for under its own name, and under its dotted name for a namespace package (`google-auth` →
+# `google.auth`, board 309). A dotted entry counts that module or anything under it — also how a package
+# another one uses is seen (`jinja2` under `fastapi.templating`). Short on purpose — a signal is a lead, not a resolver.
 IMPORT_NAMES = {
     "attrs": ("attr", "attrs"),
     "beautifulsoup4": ("bs4",),
@@ -179,8 +181,9 @@ IMPORT_NAMES = {
     "opencv-contrib-python": ("cv2",),
     "opencv-python": ("cv2",),
     "opencv-python-headless": ("cv2",),
+    "jinja2": ("jinja2", "fastapi.templating", "starlette.templating"),
     "pillow": ("PIL",),
-    "protobuf": ("google",),
+    "protobuf": ("google.protobuf",),
     "psycopg2-binary": ("psycopg2",),
     "pycryptodome": ("Crypto",),
     "pyjwt": ("jwt",),
@@ -201,12 +204,14 @@ IMPORT_NAMES = {
 
 
 def import_names(distribution: str) -> tuple[str, ...]:
-    """The top-level modules a declared distribution is imported as."""
+    """The modules a declared distribution is imported as: its own name, and its dotted name for a namespace package."""
     normalized = re.sub(r"[-_.]+", "-", distribution).lower()
-    return IMPORT_NAMES.get(normalized, (normalized.replace("-", "_"),))
+    return IMPORT_NAMES.get(normalized, tuple(dict.fromkeys((normalized.replace("-", "_"), normalized.replace("-", ".")))))
 
 
 def imported_modules(path: Path) -> set[str]:
+    """Every module a file imports, with each dotted prefix (`google.cloud.storage` → `google`, `google.cloud`, …),
+    lowercased; `from google.cloud import storage` imports `google.cloud.storage` as far as this can tell."""
     try:
         tree = budget.parse_py(path.read_text(encoding="utf-8", errors="replace"))
     except OSError:
@@ -217,11 +222,13 @@ def imported_modules(path: Path) -> set[str]:
             modules.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
             modules.add(node.module)
-    return {module.split(".")[0].lower() for module in modules}
+            modules.update(f"{node.module}.{alias.name}" for alias in node.names if alias.name != "*")
+    parts = [module.lower().split(".") for module in modules]
+    return {".".join(names[:n]) for names in parts for n in range(1, len(names) + 1)}
 
 
 def importers(base: Path) -> dict[str, set[str]]:
-    """Every top-level module imported by a Python file under `base` (lowercased) → the files, relative to `base`."""
+    """Every module imported by a Python file under `base`, with its dotted prefixes (lowercased) → the files, relative to `base`."""
     found: dict[str, set[str]] = {}
     for path in (p for p in base.rglob("*.py") if ".venv" not in p.parts):
         for module in imported_modules(path):

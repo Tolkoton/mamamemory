@@ -57,7 +57,9 @@ exception reads only: `review` takes the board from the work branch in origin (b
     board.py owner-actions           blocked/ tasks that carry an allowed action the owner answered
                                      «так» (a rule proposal: also «ні»): one
                                      `name<TAB>action<TAB>argument<TAB>sha256` line each
-    board.py action-line <action>    the line an agent writes under its question to offer the action
+    board.py action-line <action> [<slug>]
+                                     the line an agent writes under its question to offer the action
+                                     (`reseal-contract` names the slice: `.engine/slices/<slug>.md`)
     board.py maintain-task [--today YYYY-MM-DD]
                                      the runner's weekly call: put the maintenance task into todo/
                                      when it is due (see THE MAINTENANCE TASK); prints its path
@@ -75,6 +77,9 @@ exception reads only: `review` takes the board from the work branch in origin (b
                                      something open becomes a task of the board (see AN OPEN ITEM);
                                      `todo` is the old name of `proposed` and lands there (A PROPOSAL);
                                      prints its path; exit 1: no board, or nothing to ask
+    board.py close-item --key K --why W
+                                     the unanswered item with key K in blocked/ (or a proposal) settled
+                                     itself: done/NNN-name/ with the reason in report.md; exit 1: none waits
     board.py anomaly <task|-> <what happened> <what was done> [--source WHO]
                                      one entry in tasks/ANOMALIES.md; WHO wrote it: runner
                                      (the default), агент, gates, hook <name>
@@ -116,6 +121,14 @@ overseer's recommendation when there is one, the question «Зробити це 
 (owner_action.py promote-rule → lesson_queue.promote), «ні» too (reject-rule: the proposal is
 closed); either way the runner moves the task to done/ with a short report and no agent is
 started. Any other answer is an instruction for the agent.
+
+RESEALING A SLICE CONTRACT (board 308) is such an action too: `reseal-contract <slug> <sha256 of the
+changed .engine/slices/<slug>.md>`, offered under the question that shows the owner how a sealed
+contract changes. «так» is the change and the re-approval at once — no second question about the
+fingerprint: the runner reseals through owner_action.py (contract_fingerprint.reseal) when the
+contract is still the text the owner saw, and the audit of the slice is no longer held. A contract
+that changed since is stale: nothing is sealed and the agent asks again. The one action whose line
+names its target besides the sha256; the `argument` of `owner-actions` is then `<slug> <sha256>`.
 
 UPDATING DEPENDENCIES (board 076) is such an action too: `update-deps`, offered under the question
 that ends a `/maintain` task, with the sha256 of the list `.engine/maintain/updates.json` the owner
@@ -209,7 +222,8 @@ refused ask-gated command leaves with something only the owner can settle) write
 owner must answer, into proposed/ when it is work an agent could do (A PROPOSAL), into done/ (task.md
 and report.md) when it is recorded as already settled. With `--key` the line `Відкритий пункт: <key>` goes
 under the title, and a second call with the key of a task still in proposed/, todo/, doing/ or blocked/
-returns that task instead of writing another. The logs .engine/overseer/parked.md and escalations.md are
+returns that task instead of writing another. `close_item` (`close-item`, board 304) moves an item that settled
+itself — its question unanswered in blocked/, or a proposal — to done/ with the reason in report.md. The logs .engine/overseer/parked.md and escalations.md are
 history: they are appended to where a project has no board, nothing in them is ever closed, and
 nothing reads them to learn what is open.
 
@@ -239,6 +253,14 @@ cleanup task is not placed, and a tool starts no new session (board_state.extra_
 that meets the cap in the middle of its work commits what is done and calls `extra-wait`: it goes
 back to todo/ with the mark, with no question, and is taken again when the sum has fallen — the
 runner does not park it. In the owner's own session (`--attended`) neither rule holds.
+
+THE OWNER'S OPERATOR (board 405) puts files in the inbox for the owner — an agent outside Claude Code
+(on the engine's server, Сонько) or a person; the owner names one in ~/engine-ops/operator.md, which no
+agent session writes. What the operator puts there is the owner's word, like a file the owner put there.
+An answer an agent wrote down from the owner's words in a conversation carries «записано Claude зі
+слів власника <date>, <where>: «<the words>»» (`recorded`); without the date, the place or the quote it
+is no answer — `import-inbox` leaves the copy in the inbox, `unblock` leaves the task in blocked/, and
+the journal says why once. Consent through such a record is «так» in the answer and in the quote alike.
 
 A MODE (board 097) is the task's: `Режим: ескіз|соло|конвеєр` under its title, соло without the
 line. The mode itself is read by .claude/hooks/mode.py — the one reader of the mode and of «nobody
@@ -308,18 +330,24 @@ QUESTIONS = re.compile(r"^##\s+Питання до власника\s*$", re.MUL
 HEADING = re.compile(r"^##\s", re.MULTILINE)
 ANSWER = re.compile(r"^[\s>*_-]*Відповідь:[*_]*[ \t]*(.*)$", re.MULTILINE)
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+# AN ANSWER RECORDED FROM THE OWNER'S WORDS (board 405): an agent wrote it, the owner or the owner's operator
+# put it in; it holds only with the date, where the owner said it, and the words verbatim in «».
+RECORDED = re.compile(r"записано\s+\S+\s+зі\s+слів\s+власника(?P<rest>.*)$", re.IGNORECASE)
+RECORD_OF = re.compile(r"^\s*(?P<date>\d{4}-\d\d-\d\d)\b[\s,;—–-]*(?P<place>[^«:]*\w[^«:]*?)\s*[:—–-]*\s*«(?P<quote>[^»]*\S[^»]*)»")
 # Both markers are read in the wording before board 053 too: a question already asked keeps working.
 GATE = re.compile(r"^Ескалація (?:gates|воріт):\s*(\S+)", re.MULTILINE)
 COUNT_WORDS = {2: "двох", 3: "трьох"}
 CONSENT = "так"  # the one form of the owner's consent (board 036): see `is_word`
 # What the runner may do on the owner's «так». `close-escalation` is offered by the gate's own
 # question (the `Ескалація gates:` line), the rest by an action line.
-OWNER_ACTIONS = ("apply-settings", "promote-rule", "amend-goals", "seal-goals", "update-deps", "close-escalation")
+OWNER_ACTIONS = ("apply-settings", "promote-rule", "amend-goals", "seal-goals", "update-deps", "reseal-contract", "close-escalation")
 RULE_ACTION, RULE_DECLINE, RULE_NO = "promote-rule", "reject-rule", "ні"  # «ні» under a rule question closes the proposal
 RULE = re.compile(r"^Пропозиція правила:\s*RP-(\w+)", re.MULTILINE)
-ACTION = re.compile(r"^[\s>*_-]*Дія (?:runner-а|виконавця):[ \t]*`?([a-z][a-z-]*)(?:[ \t]+([0-9a-f]{64}))?`?[ \t]*$", re.MULTILINE)
+ACTION = re.compile(r"^[\s>*_-]*Дія (?:runner-а|виконавця):[ \t]*`?([a-z][a-z-]*)(?:[ \t]+(?![0-9a-f]{64}\b)([a-z0-9][a-z0-9._-]*))?"
+                    r"(?:[ \t]+([0-9a-f]{64}))?`?[ \t]*$", re.MULTILINE)  # action, the target (reseal-contract only), sha256
 DEPS_ACTION, DEPS_RESULT = "update-deps", ".engine/maintain/update-result.md"
 SEAL_ACTION = "seal-goals"  # the first seal on the goals document (board 787)
+RESEAL_ACTION, SLICES = "reseal-contract", ".engine/slices"  # a sealed slice contract approved again (board 308)
 ACTION_FILES = {"apply-settings": "docs/tasks/settings.json", "amend-goals": ".engine/goals/proposed.md",
                 SEAL_ACTION: ".engine/goals.md", DEPS_ACTION: ".engine/maintain/updates.json"}  # the file whose sha256 the offer names
 MAINTAIN_NAME = re.compile(r"^\d{3,}-maintain-(\d{4}-\d\d-\d\d)(?:\.md)?$")
@@ -328,7 +356,7 @@ ARCHITECT_NAME = re.compile(r"^\d{3,}-master-architect(?:\.md)?$")
 CLEANUP_NAME = re.compile(r"^\d{3,}-cleanup-(\d{4}-\d\d-\d\d)(?:\.md)?$")
 CLEANUP_SCRIPT, CLEANUP_DAYS = ".claude/hooks/simplifier.py", 1
 ITEM = re.compile(r"^Відкритий пункт:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
-OFFERS = {*ACTION_FILES, RULE_ACTION}  # what an action line may offer; the rule's sha256 is of its id and text
+OFFERS = {*ACTION_FILES, RULE_ACTION, RESEAL_ACTION}  # what an action line may offer; the rule's sha256 is of its id and text
 EXIT_REFUSED, EXIT_TODO_EMPTY, EXIT_NONE_ELIGIBLE, EXIT_EXTRA_WAIT = 2, 3, 4, 5
 
 
@@ -351,8 +379,14 @@ class Task:
     @property
     def answered(self) -> bool:
         """Every question has its answer — and there is at least one: a task that asks nothing
-        was answered by nobody."""
-        return bool(self.answers) and all(self.answers)
+        was answered by nobody. An answer recorded from the owner's words that cannot be checked
+        (board 405: no date, place or quote) is no answer."""
+        return bool(self.answers) and all(a and recorded(a)[2] for a in self.answers)
+
+    @property
+    def unverified(self) -> bool:
+        """Every question has a text, and one of them is a record of the owner's words that cannot be checked."""
+        return bool(self.answers) and all(self.answers) and not self.answered
 
     @property
     def closes(self) -> bool:
@@ -376,7 +410,25 @@ class Task:
 
     def says(self, word: str) -> bool:
         """Every question is answered and the last answer is nothing but `word`."""
-        return self.answered and is_word(self.answers[-1], word)
+        if not self.answered:
+            return False
+        body, quote, _ = recorded(self.answers[-1])
+        return is_word(body or quote or "", word) and (quote is None or is_word(quote, word))
+
+
+def recorded(answer: str) -> tuple[str, str | None, bool]:
+    """An answer an agent wrote down from the owner's words (board 405): «… — записано Claude зі слів
+    власника 2026-10-24, сесія thinkhow-00: «так»». (the answer before the mark, the owner's quoted words
+    or None when there is no mark, whether the record can be checked: a date, where it was said, a quote).
+    Consent through such a record is the one word both in the answer and in the quote."""
+    mark = RECORDED.search(answer)
+    if not mark:
+        return answer, None, True
+    body = answer[: mark.start()].strip(" \t—–-:;,.")
+    said = RECORD_OF.match(mark.group("rest"))
+    if not said:
+        return body, "", False
+    return body, said.group("quote").strip(), True
 
 
 def is_word(answer: str, word: str) -> bool:
@@ -402,10 +454,10 @@ def parse(text: str) -> Task:
         questions = rest[: following.start()] if following else rest
     rule = RULE.search(header)
     klass, class_error = _class_line(header)
-    offers = [m for m in ACTION.finditer(questions) if m.group(1) in OFFERS]
+    offers = [m for m in ACTION.finditer(questions) if m.group(1) in OFFERS and bool(m.group(2)) == (m.group(1) == RESEAL_ACTION)]
     return Task(
         action=offers[-1].group(1) if offers else "",
-        action_arg=(offers[-1].group(2) or "") if offers else "",
+        action_arg=" ".join(filter(None, offers[-1].group(2, 3))) if offers else "",
         depends=tuple(int(n) for n in re.findall(r"\d+", depends.group(1))) if depends else (),
         audit=audit is not None and audit.group(1).strip(".,;*_").lower() == "так",
         questions=questions.strip(),
@@ -684,7 +736,13 @@ def import_inbox(board: Board, inbox: Path) -> list[str]:
                 _ambiguous(board, source.name, several)
                 continue
         if blocked:
-            if not parse(content.decode("utf-8", "replace")).answered:
+            copy = parse(content.decode("utf-8", "replace"))
+            if copy.unverified:
+                lines.append(f"{source.name} skipped: {number:03d} is in blocked/ and an answer recorded from the owner's words "
+                             "has no date, place or quote; the file stays in the inbox")
+                _unverified(board, source.name, "файл лишився в inbox")
+                continue
+            if not copy.answered:
                 lines.append(f"{source.name} skipped: {number:03d} is in blocked/ and this copy does not answer every question")
                 continue
             column, verb, old = "blocked", "answered", blocked
@@ -860,6 +918,16 @@ def _unread_mode(board: Board, name: str, wrong: str, remedy: str = "") -> None:
                 "(або приберіть його — тоді соло) і покладіть файл знову", "task board (import-inbox)")
 
 
+def _unverified(board: Board, name: str, kept: str) -> None:
+    """The journal entry, once per file, of an answer recorded from the owner's words that cannot be checked (board 405)."""
+    what = (f"у `{name}` відповідь «записано … зі слів власника» без дати, місця чи дослівної цитати в «» — "
+            "це не відповідь, task board питає знову")
+    if " ".join(what.split()) not in journal.text(board.tasks.parent, "anomalies"):
+        anomaly(board, "-", what, f"{kept}; задача чекає в `blocked/`. Допишіть у рядок `Відповідь:` "
+                "«записано Claude зі слів власника <рік-місяць-день>, <сесія чи канал>: «<слова власника>»» і покладіть знову",
+                "task board")
+
+
 def duplicate_lines(columns: dict[str, list[str]]) -> list[str]:
     """TWO FILES WITH ONE NUMBER in one column (board 065), one line per number. `columns` maps a
     column to the names in it. The number is how the inbox, the dependencies and the owner name a
@@ -903,6 +971,8 @@ def unblock(board: Board) -> list[str]:
         task = read(path)
         # A gate question answered «так» is closed by the runner, not handed to an agent;
         # an offered action answered «так» waits for the runner to act on it first.
+        if task.unverified:
+            _unverified(board, path.name, "файл лишився в `blocked/`")
         if task.answered and not task.closes and not task.decided:
             target = board.tasks / "todo" / path.name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -947,12 +1017,12 @@ def gate_question(board: Board, stamp: str, blocks: int, slice_name: str, files:
 
 ## Що зробити
 Це питання поставили gates, а не агент. Агент на нього не відповідає і сам ескалацію не
-закриває: відповідь «так» виконує runner. Якщо власник відповів інакше — це
+закриває: відповідь «так» виконує runner, а в сесії з власником без runner-а — сам Stop gate. Якщо власник відповів інакше — це
 вказівка агентові: виконай її, допиши внизу нове питання «Тепер закрити ескалацію?» з порожнім
 рядком відповіді й поверни задачу в `tasks/blocked/`.
 
 ## Готово, коли
-Власник відповів «так», і runner закрив ескалацію.
+Власник відповів «так», і ескалацію закрито.
 
 ## Питання до власника
 Варіанти відповіді:
@@ -1070,6 +1140,29 @@ def open_item(board: Board, column: str, title: str, what: str, question: str = 
     return target
 
 
+def close_item(board: Board, key: str, why: str) -> Path | None:
+    """An open item that settled itself without the owner (board 304: a new sealed contract ended
+    the dispute that parked a slice): the unanswered question with `key` in blocked/, or the
+    proposal in proposed/, goes to done/NNN-name/ with task.md and a report.md that says why.
+    None when no such task waits: an item the owner answered is the owner's, and is left alone."""
+    key, why = (" ".join(part.replace("<!--", "<! --").split()) for part in (key, why))
+    if not key or not why or not board.tasks.is_dir():
+        return None
+    for path in (p for c in ("blocked", PROPOSED) for p in board.files(c)):
+        found = ITEM.search(path.read_text(encoding="utf-8").split("\n## ", 1)[0])
+        if not found or found.group(1) != key or any(read(path).answers):
+            continue
+        folder = board.tasks / "done" / path.stem
+        folder.mkdir(parents=True, exist_ok=True)
+        title = path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
+        (folder / "report.md").write_text(f"# {title}: звіт\n\n## Що змінилось для власника\nПитання знято без вашої відповіді: {why}\n\n"
+                                          f"- Закрито: {utc_now()}\n", encoding="utf-8")
+        target = folder / "task.md"
+        path.replace(target)
+        return target
+    return None
+
+
 PROPOSAL_NOTE = (f"- Це пропозиція, а не задача в черзі: runner із `tasks/{PROPOSED}/` нічого не бере. У роботу її ставить "
                  "власник — файлом із цим номером в inbox.\n")
 
@@ -1105,27 +1198,43 @@ def gate_task(board: Board, name: str) -> Path | None:
     return path if path.is_file() and TASK_NAME.match(path.name) and read(path).gate else None
 
 
-def gate_done(board: Board, path: Path, outcome: str) -> Path:
-    """A gate question the runner has acted on: done/NNN-name/ with task.md and a report.md."""
+def gate_done(board: Board, path: Path, outcome: str, by: str = "") -> Path:
+    """A gate question the runner has acted on: done/NNN-name/ with task.md and a report.md. `by`
+    names who acted when it was not the runner: the Stop gate of the session the owner answered
+    in (board 310)."""
     stamp = read(path).gate
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     if outcome == "closed":
-        changed = (f"Ескалацію gates {stamp} закрито за вашою відповіддю «так» ({now}, runner). "
+        changed = (f"Ескалацію gates {stamp} закрито за вашою відповіддю «так» ({now}, {by or 'runner'}). "
                    "Overseer знову приймає роботу з цими файлами.")
     elif outcome == "elsewhere":
         changed = (f"Ескалацію gates {stamp} закрито іншим шляхом — командою `gate.py --close-escalation` у терміналі, "
                    f"а не відповіддю на це питання. Питання більше нічого не питає, тому runner сам прибрав його з task board ({now}).")
     else:
         changed = (f"Ескалація gates {stamp} на момент вашої відповіді вже не була відкрита (її закрито раніше "
-                   f"або запису про неї немає). Питання прибрано з task board ({now}, runner).")
+                   f"або запису про неї немає). Питання прибрано з task board ({now}, {by or 'runner'}).")
     target = board.tasks / "done" / path.stem
     target.mkdir(parents=True, exist_ok=True)
     path.rename(target / "task.md")
     (target / "report.md").write_text(
         f"# Звіт: {path.stem}\n\n## Що змінилось для власника\n- {changed}\n\n"
-        "Цей звіт написав runner, не агент: жодної роботи тут не було"
+        + (f"Цей звіт написав {by}, не агент" if by else "Цей звіт написав runner, не агент") + ": жодної роботи тут не було"
         + (".\n" if outcome == "elsewhere" else ", лише ваша відповідь.\n"), encoding="utf-8")
     return target
+
+
+def gate_repeat(path: Path, stamp: str, blocks: int, reasons: list[str], report: str) -> None:
+    """One cause, one card (board 310): the gate gave up again on a file and line whose question is
+    still open, so the new time is told under the old question, not in a new card. Written above
+    `## Питання до власника`, so the question and its answer line stay where they are."""
+    text = path.read_text(encoding="utf-8")
+    shown = "\n".join(f"  - {r.replace('<!--', '<! --').strip()}" for r in reasons) or "  - (причину не записано)"
+    part = (f"## Повтор {stamp}\n"
+            f"Gates знову не пройшли {blocks} раз(и) поспіль на тому самому місці. Нової картки не відкрито: "
+            f"відповідь на питання нижче закриває і цей раз.\n\n- На чому зупинилося:\n{shown}\n"
+            f"- Повний звіт (на сервері): `{report}`\n\n")
+    head, mark, rest = text.partition("## Питання до власника")
+    path.write_text(head + part + mark + rest if mark else text.rstrip("\n") + "\n\n" + part, encoding="utf-8")
 
 
 def owner_actions(board: Board) -> list[str]:
@@ -1137,8 +1246,10 @@ def owner_actions(board: Board) -> list[str]:
     return lines
 
 
-def action_line(root: Path, action: str) -> str:
+def action_line(root: Path, action: str, slug: str = "") -> str:
     """The offer an agent writes under its question: the action and the sha256 of what it applies."""
+    if action == RESEAL_ACTION:
+        return f"Дія runner-а: {action} {slug} {hashlib.sha256((root / SLICES / f'{slug}.md').read_bytes()).hexdigest()}"
     return f"Дія runner-а: {action} {hashlib.sha256((root / ACTION_FILES[action]).read_bytes()).hexdigest()}"
 
 
@@ -1168,6 +1279,9 @@ RULE_OUTCOMES = {
     (SEAL_ACTION, "failed"): "Дію не виконано ({now}, runner): {action} — документ цілей не запечатано: у ньому немає жодного нумерованого рядка, номер "
                              "ужито двічі, або документ уже затверджували і відтоді змінили — тоді це поправка, `amend-goals` (журнал на сервері: "
                              ".claude/state/board/logs/owner-action.log). Агентові: виправ і спитай знову.",
+    (RESEAL_ACTION, "applied"): "Дію виконано ({now}, runner): {action} — за відповіддю власника «так» slice contract запечатано заново таким, "
+                                "як він був у запитанні: зміна затверджена, audit slice-а більше не тримається. Агентові: переконайся "
+                                "(`contract_fingerprint.py check <контракт>`) і працюй далі за ним.",
     (RULE_ACTION, "applied"): "Дію виконано ({now}, runner): {action} — за відповіддю власника «так» правило додано до `.engine/rules.md`.",
     (RULE_ACTION, "failed"): "Дію не виконано ({now}, runner): {action} — правило не додано: постійний контекст перевищив би "
                              "200 рядків (журнал на сервері: .claude/state/board/logs/owner-action.log). Агентові: скороти "
@@ -1401,13 +1515,15 @@ def _text(path: Path) -> str:
         return ""
 
 
-def gate_reject(path: Path, word: str = CONSENT) -> None:
-    """Wipe an answer that did not come from the owner and say so under the question."""
+def gate_reject(path: Path, word: str = CONSENT, by: str = "", why: str = "") -> None:
+    """Wipe an answer that did not come from the owner and say so under the question. `by` and
+    `why` replace the runner's note when someone else refuses it (board 310: the Stop gate)."""
     lines = path.read_text(encoding="utf-8").splitlines()
     last = max(i for i, line in enumerate(lines) if ANSWER.match(line))
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     lines[last] = lines[last][: lines[last].index("Відповідь:")] + "Відповідь:"
-    lines.insert(last, f"Примітка runner-а ({now}): відповідь «{word}» з'явилася на сервері, а не прийшла "
+    lines.insert(last, f"Примітка {by} ({now}): {why}" if by else
+                       f"Примітка runner-а ({now}): відповідь «{word}» з'явилася на сервері, а не прийшла "
                        "через гілку чи inbox, тому її не прийнято. Дайте відповідь ще раз.")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -1669,7 +1785,9 @@ def main() -> int:
     commands.add_parser("gate-closed")
     commands.add_parser("gate-reject").add_argument("name")
     commands.add_parser("owner-actions")
-    commands.add_parser("action-line").add_argument("action", choices=sorted(ACTION_FILES))
+    action_line_parser = commands.add_parser("action-line")
+    action_line_parser.add_argument("action", choices=sorted({*ACTION_FILES, RESEAL_ACTION}))
+    action_line_parser.add_argument("slug", nargs="?", default="", help="reseal-contract: the slice, .engine/slices/<slug>.md")
     commands.add_parser("architect-task")
     commands.add_parser("maintain-task").add_argument("--today", default=os.environ.get("BOARD_TODAY") or None, help="YYYY-MM-DD (default: today, UTC)")
     commands.add_parser("cleanup-task").add_argument("--today", default=os.environ.get("BOARD_TODAY") or None, help="YYYY-MM-DD (default: today, UTC)")
@@ -1699,6 +1817,9 @@ def main() -> int:
     item_parser.add_argument("--do", default="", help="proposed: what to do; done: why it is settled (the report)")
     item_parser.add_argument("--key", default="", help="the item's own name: a second call with it returns the task still open")
     item_parser.add_argument("--source", default="агент", help="who writes: агент (default), hook <name>, overseer")
+    close_parser = commands.add_parser("close-item")
+    close_parser.add_argument("--key", required=True)
+    close_parser.add_argument("--why", required=True, help="why it is settled without the owner (the report)")
     commands.add_parser("summary")
     commands.add_parser("check")
     review_parser = commands.add_parser("review")
@@ -1765,10 +1886,14 @@ def main() -> int:
             print(line)
         return 0
     if args.command == "action-line":
-        if not (root / ACTION_FILES[args.action]).is_file():
-            print(f"board: {ACTION_FILES[args.action]} is missing; there is nothing to offer", file=sys.stderr)
+        if (args.action == RESEAL_ACTION) != bool(args.slug) or (args.slug and not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", args.slug)):
+            print(f"board: `action-line {RESEAL_ACTION} <slug>` names the slice, and only it takes one", file=sys.stderr)
             return EXIT_REFUSED
-        print(action_line(root, args.action))
+        offered = f"{SLICES}/{args.slug}.md" if args.slug else ACTION_FILES[args.action]
+        if not (root / offered).is_file():
+            print(f"board: {offered} is missing; there is nothing to offer", file=sys.stderr)
+            return EXIT_REFUSED
+        print(action_line(root, args.action, args.slug))
         return 0
     if args.command == "architect-task":
         placed = architect_task(board, root)
@@ -1802,6 +1927,13 @@ def main() -> int:
         item = open_item(board, args.to, args.title, args.what, args.question, args.do, args.key, args.source)
         if item is None:
             print("no task written: the project has no tasks/ directory, the title is empty, or --to blocked came without --question", file=sys.stderr)
+            return 1
+        print(board.shown(item))
+        return 0
+    if args.command == "close-item":
+        item = close_item(board, args.key, args.why)
+        if item is None:
+            print(f"no task closed: no unanswered item with the key {args.key!r} waits in tasks/blocked/ or tasks/proposed/", file=sys.stderr)
             return 1
         print(board.shown(item))
         return 0

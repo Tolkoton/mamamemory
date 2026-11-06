@@ -140,7 +140,9 @@
 # `seal-goals` (boards 051, 787: goals.py puts an approved amendment in place of the goals document
 # and seals it, or puts the first seal on the document the owner approved — in a new project
 # `board.py architect-task` then puts the /master-architect task, with the owner present, into
-# todo/: board 205) and the gate's `close-escalation` above.
+# todo/: board 205), `reseal-contract` (board 308: a sealed slice contract the owner approved again
+# with its change — contract_fingerprint.py seals it anew when it is the text of the question) and
+# the gate's `close-escalation` above.
 # The same rule for where the answer came from applies. The offer is then replaced by the
 # outcome and the task returns to todo/ for the agent to check and report; a rule question the
 # runner acted on goes straight to done/ with a short report, no agent is started for it.

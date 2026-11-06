@@ -32,7 +32,8 @@ not say:
   the auditor reads the request package (your final message, the commands that
   really ran, the contract), not your explanation.
 - No valid verdict (the agent was not launched, its answer did not fit the
-  schema, the tree changed during the audit) — the request is repeated, twice
+  schema, the tree changed during the audit; a check rewriting its output under
+  `.engine/artifacts/` is not a change) — the request is repeated, twice
   at most; then the item is parked and the turn ends.
 
 ## Asking for an audit by hand

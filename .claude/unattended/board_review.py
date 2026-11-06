@@ -603,11 +603,23 @@ def proposed_lines(src: Source) -> list[str]:
             *(f"- `{posixpath.basename(path)}` — {title_of(src.show(path), posixpath.basename(path))}" for path in offered)]
 
 
+def unverified_lines(asked: list[Asked]) -> list[str]:
+    """A task whose answers are all written but one is a record of the owner's words that cannot be checked
+    (board 405, `board.Task.unverified`): the runner keeps it in blocked/, so the review says why (proposal 1768)."""
+    held = [posixpath.basename(path) for path, _, task in asked if task.unverified]
+    if not held:
+        return []
+    return [(f"Відповідь записано, але її не можна перевірити — задача стоїть: {', '.join(f'`{name}`' for name in held)}. Відповідь "
+             "«записано … зі слів власника» без дати, місця чи дослівної цитати в «» — це не відповідь, і runner лишає задачу в "
+             "`tasks/blocked/`; потрібен рядок «записано Claude зі слів власника <рік-місяць-день>, <сесія чи канал>: «<слова власника>»»."), ""]
+
+
 def waiting_section(src: Source, state: Path) -> list[str]:
     asked: list[Asked] = [(path, text, board.parse(text)) for path in src.column("blocked") for text in [src.show(path)]]
     total = sum(task.answers.count("") for _, _, task in asked)
     return [(f"Незаповнених відповідей: {total}, у задачах: {sum(1 for _, _, task in asked if '' in task.answers)} (тека `tasks/blocked/`). Відповідь пишеться в "
              "рядок «Відповідь:» файла задачі — у гілці або копією файла в inbox; задача повертається в роботу, коли заповнено всі."), "",
+            *unverified_lines(asked),
             *question_lines(src, asked),
             "### Задачі, що потребують вашої присутності", "", *attended_lines(src), "",
             "### Пропозиції налаштувань", "", *settings_lines(src, asked), "",
@@ -659,7 +671,8 @@ def goals_section(src: Source) -> list[str]:
 # ------------------------------------------------------------------ testing
 
 VERDICT_WORDS = {"test_right": "ПРАВИЙ ТЕСТ — знайдено справжню помилку в коді", "test_wrong": "тест був хибний, виправлено",
-                 "contract_ambiguous": "slice contract двозначний — питання пішло planner-у"}
+                 "contract_ambiguous": "slice contract двозначний — питання пішло planner-у",
+                 "superseded": "новий slice contract змінив поведінку — tester виправив тест"}
 KIND_WORDS = {"catch_up": "наздогнати contract tests", "integration": "інтеграційні тести", "mutation": "mutation testing"}
 
 
@@ -687,14 +700,21 @@ def testing_section(src: Source, period: Since) -> list[str]:
                      + (" (" + "; ".join(f"`{slug}`: {testing.one_line(named[slug].get('none_reason'), 120)}" for slug in none) + ")" if none else "")
                      + (f"; slice contract без розділу (запечатаний раніше) — {absent}" if absent else "")
                      + ". Кожен invariant перевіряється прикладами: бібліотеки property-based testing немає.")
+    def lifted(at: int, parked: dict[str, Any]) -> str:
+        """A park a new contract lifted later (board 304) says so."""
+        later = [u for u in of("unparked", every[at:]) if u.get("slice") == parked.get("slice")]
+        return f" Знято: новий slice contract `{later[0].get('by')}` замінив оскаржені тести." if later else ""
+
     lines += ["", "### Суперечки про тести", ""]
     rounds = of("round")
     for row in rounds:
-        lines += [f"- `{row.get('slice')}`, коло {row.get('round')} із {testing.MAX_ROUNDS}: {item.get('test')} — "
+        lines += [f"- `{row.get('slice')}`" + (f" (новий slice contract `{row.get('by')}`)" if row.get("by") else "")
+                  + f", коло {row.get('round')} із {testing.MAX_ROUNDS}: {item.get('test')} — "
                   f"{VERDICT_WORDS.get(str(item.get('verdict')), item.get('verdict'))} ({testing.one_line(item.get('reason'), 200)})" for item in row.get("items", [])]
     lines += [] if rounds else ["- Немає."]
     lines += ["", "### Відкладені slice-и", "",
-              *([f"- `{r.get('slice')}` — третє коло суперечки не проводилось; обидва кола стоять у журналі тестування." for r in of("parked", every)] or ["- Немає."])]
+              *([f"- `{r.get('slice')}` — третє коло суперечки не проводилось; обидва кола стоять у журналі тестування." + lifted(i, r)
+                 for i, r in enumerate(every) if r.get("type") == "parked"] or ["- Немає."])]
     lines += ["", "### Рішення «не перемикатися»", "",
               *([f"- `{r.get('slice')}`: {testing.one_line(r.get('reason'), 200)} (малий: {testing.one_line(r.get('small'), 120)}; однорідний: {testing.one_line(r.get('uniform'), 120)})"
                  for r in decisions if r.get("decision") == "builder"] or ["- Немає."])]

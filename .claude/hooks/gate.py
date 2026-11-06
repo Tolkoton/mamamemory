@@ -15,6 +15,9 @@ Layers
                 lets the turn end and parks the item for a human (GATE_MAX_BLOCKS, default 3):
                 in a project with a task board the question is a task in tasks/blocked/, and
                 the owner's answer «так» there closes it; without a board, a parked.md entry.
+                Board 310: style alone never escalates, the «так» acts at the next Stop or
+                SessionStart of an attended session, and one place gets one card (see the
+                section "board 310" below).
                 During a rebase or a merge no file is written to the board (board 065): the
                 escalation goes to the anomaly journal, and its question is asked when that is
                 over — by the next stop run or by `gate.py --ask-waiting` (the board runner).
@@ -41,7 +44,9 @@ until the owner's first commit the engine's own files are untracked and would re
 work. A file that the base lacks AND that is byte for byte what .claude/engine-lock.json recorded
 (an engine file, or a seeded one as it was seeded) is left out of everything below; one changed byte,
 or a file the base already has, and it is judged like any other — a seeded file (project.env)
-against the seed it started from, so only the keys really changed are named. See installed.py.
+against the seed it started from, so only the keys really changed are named. An update not yet
+committed (board 120) is left out the same way: a file the base holds as the base's lock recorded
+it and the working tree holds as the working lock records it. See installed.py.
 
 BYPASS GUARD (stop, pre_commit). A block when the turn's diff ADDS a `# type: ignore`, a `# noqa`,
 a pytest skip / skipif / xfail, or CHANGES the linter's or the type checker's configuration
@@ -88,6 +93,12 @@ workflows are compared with the snapshot taken when the turn began. A file that 
 back by the gate itself, the discarded change kept as a patch, the anomaly journal written, and
 the turn blocked once so that the agent reads it. See protected_guard.py.
 
+A SHARED TREE (stop; board 305). While a live board runner holds .claude/state/board/lock and this
+session is not one it started, the runner's unfinished work is in the same diff. The layer then
+judges only the files this session's own tool calls wrote (shared_tree.py): the others are left out
+of the checks, a finding a check still reports on one of them is a `log`, and an escalation names
+only this session's files and no board task but the owner's attended one. When the transcript does
+not show every write, the whole tree is judged as before.
 Standard library only; Python 3.11+. The linters are external commands.
 """
 
@@ -692,6 +703,13 @@ def protected_guard_module() -> Any:
     return protected_guard
 
 
+def shared_tree_module() -> Any:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import shared_tree
+
+    return shared_tree
+
+
 def installed_module() -> Any:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import installed
@@ -723,11 +741,12 @@ def add_guarded(report: Report, found: list[dict[str, Any]]) -> None:
         report.reasons.append(f"GUARDED FILE {finding.file} [{finding.rule}] {finding.message}. {finding.hint}")
 
 
-def deleted_code(root: Path, layer: str, diff_ref: str | None, env: dict[str, str]) -> list[str]:
+def deleted_code(root: Path, layer: str, diff_ref: str | None, env: dict[str, str],
+                 own: set[str] | None = None) -> list[str]:
     """Working-code files the change removed: `changed_files` lists only what still exists."""
     args = ["--cached"] if layer == "pre_commit" else [diff_ref or "HEAD"]
     gone = lines_of(git(root, "diff", "--name-only", "--diff-filter=D", *args))
-    return [rel for rel in gone if delete_guard_module().is_working_code(env, rel)]
+    return [rel for rel in gone if delete_guard_module().is_working_code(env, rel) and (own is None or rel in own)]
 
 
 def guard_baseline(root: Path, rel: str, old: str | None, new: str | None, report: Report) -> None:
@@ -973,7 +992,8 @@ def active_slice(root: Path) -> str | None:
     """The slug of the slice .engine/PROGRESS.md marks IN PROGRESS (the convention overseer_stop.py
     and complexity_budget.py read): a `.engine/slices/<slug>.md` path in that block, else the slug
     of its `## Slice <slug>` heading. With no heading IN PROGRESS at all — in the pipeline nobody
-    writes one (board 789) — the slice testing.py opened last under this session's board task.
+    writes one (board 789) — the slice testing.py opened last under this session's board task; with
+    none opened under it, the one sealed contract the task wrote itself (board 1753).
     None when no slice is active."""
     try:
         text = (root / ".engine" / "PROGRESS.md").read_text(encoding="utf-8")
@@ -994,7 +1014,8 @@ def active_slice(root: Path) -> str | None:
     try:
         import testing
 
-        return testing.opened_slice(root, work_in_hand(root))
+        task = work_in_hand(root)
+        return testing.opened_slice(root, task) or testing.sealed_by_task(root, task)
     except (ImportError, OSError, ValueError, TypeError, AttributeError):
         return None
 
@@ -1024,6 +1045,19 @@ def work_in_hand(root: Path) -> str:
         return ""
 
 
+def attended_work(root: Path) -> str:
+    """In a shared tree the task in doing/ that needs no owner is the runner's, never this session's:
+    only the owner's attended one can be the work in hand."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "unattended"))
+        import board
+
+        held = board.Board(root / "tasks").in_hand(True) if (root / "tasks").is_dir() else []
+        return held[0].stem if len(held) == 1 else ""
+    except (ImportError, OSError, ValueError, TypeError, AttributeError):
+        return ""
+
+
 def open_escalation(root: Path, stamp: str, report: Report, task: str | None = None,
                     waiting: dict[str, Any] | None = None) -> None:
     """Machine state beside the parked entry: overseer_stop.py refuses an OVERSEER_PASS while an
@@ -1037,10 +1071,10 @@ def open_escalation(root: Path, stamp: str, report: Report, task: str | None = N
     files = sorted({f.file for f in report.findings if f.severity == "block" and f.file}) or sorted(report.files)
     head = git(root, "rev-parse", "-q", "--verify", "HEAD").stdout.strip()
     entry: dict[str, Any] = {"stamp": stamp, "slice": active_slice(root) or NO_SLICE, "files": files,
-             "head": head, "reasons": [r.splitlines()[0][:200] for r in report.reasons[:5]]}
+             "head": head, "reasons": [r.splitlines()[0][:200] for r in report.reasons[:5]], "places": places(report)}
     if task:
         entry["task"] = task
-    work = work_in_hand(root)
+    work = attended_work(root) if "shared_tree" in report.extra else work_in_hand(root)
     if work:
         entry["work"] = work
     if waiting:
@@ -1064,6 +1098,12 @@ def close_escalation(root: Path, which: str) -> int:
         print("gate: --close-escalation is the owner's command and is refused inside a Claude Code "
               "session (CLAUDECODE is set). Run it in your own terminal.", file=sys.stderr)
         return 2
+    return close_open(root, which)
+
+
+def close_open(root: Path, which: str, quiet: bool = False) -> int:
+    """Close the open escalation `which` (a stamp, or `all`): 0 closed, 1 none such is open. Called
+    by the owner's command above and by `owner_answers` — never by the agent's own word."""
     data = read_escalations(root)
     closing = [e for e in data["open"] if which == "all" or e.get("stamp") == which]
     if not closing:
@@ -1075,7 +1115,7 @@ def close_escalation(root: Path, which: str) -> int:
     write_json(root / ESCALATIONS_REL, data)
     # Nothing is closed inside .engine/overseer/parked.md (board 037): the log is history, and
     # the open thing is the gate's question on the board, which the runner moves to done/.
-    for entry in closing:
+    for entry in closing if not quiet else []:   # a hook's stdout is its protocol: the hook says it itself
         print(f"gate: escalation {entry['stamp']} ({entry.get('slice')}) closed")
     return 0
 
@@ -1154,6 +1194,9 @@ def park_escalation(root: Path, report: Report, report_path: Path, blocks: int) 
     stamp = utc_now()
     evidence = str(report_path.relative_to(root) if report_path.is_relative_to(root) else report_path)
     busy = git_busy(root) if (root / "tasks").is_dir() else None
+    repeated = None if busy else repeat_escalation(root, stamp, report, evidence, blocks)
+    if repeated:
+        return repeated, None
     task = board_question(root, stamp, report, evidence, blocks, busy)
     open_escalation(root, stamp, report, task, {"for": busy, "blocks": blocks, "evidence": evidence} if busy else None)
     if task or busy:
@@ -1182,6 +1225,187 @@ def park_escalation(root: Path, report: Report, report_path: Path, blocks: int) 
     except (ImportError, OSError) as exc:
         print(f"gate: cannot park the escalation in {PARKED_REL}: {exc}", file=sys.stderr)
     return task, None
+
+
+# ------------------------------------------------------------------ board 310: what need not stop the work
+#
+# On 2026-11-05 (project mamamemory) the slice tester put a `# gate-allow:` two lines above a
+# `# noqa` in a test it then sealed. Three blocks opened an escalation, a fourth opened a second card
+# for the same line, and the owner's «так» under the first card closed nothing: only the board runner
+# acts on it, and the owner's session had none. The overseer then refused a green slice. Three rules:
+#   STYLE ONLY — a block of the bypass guard alone (noqa, type-ignore, config; lint, types and tests
+#     green) is the agent's to fix, but never the owner's question: on a sealed contract test, which
+#     the agent may not change, it does not block at all; elsewhere the Nth block in a row opens no
+#     escalation. Either way the finding becomes a proposal in tasks/proposed/ and stops blocking.
+#   THE OWNER'S «так» ACTS AT ONCE — in an attended session the next Stop or SessionStart closes the
+#     escalation whose question the owner answered «так» (`owner_answers`). Unattended it stays the
+#     runner's, which knows an answer that came from the owner from one written on the server.
+#   ONE CAUSE, ONE CARD — a new escalation on a file and line whose card is still open is told in
+#     that card (`repeat_escalation`), not in a new one.
+
+STYLE_RULES = ("bypass/noqa", "bypass/type-ignore", "bypass/config")
+STYLE_REL = Path(".claude/state/gate/style-deferred.json")
+TESTING_SEALS_REL = Path(".claude/state/testing/seals")
+
+
+def board_module() -> Any:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "unattended"))
+    import board
+
+    return board
+
+
+def places(report: Report) -> list[str]:
+    """Where the gate blocked: `file:line` of every block finding that names a line."""
+    return sorted({f"{f.file}:{f.line}" for f in report.findings if f.severity == "block" and f.file and f.line})
+
+
+def repeat_escalation(root: Path, stamp: str, report: Report, evidence: str, blocks: int) -> str | None:
+    """The card of an open escalation on one of the same places, with the new time told in it; None
+    when there is none and a new card is due. Best effort, like `board_question`."""
+    here = set(places(report))
+    if not here or not (root / "tasks").is_dir():
+        return None
+    data = read_escalations(root)
+    for entry in (e for e in data["open"] if isinstance(e, dict) and here & set(e.get("places") or [])):
+        task = root / str(entry.get("task") or "-")
+        if not entry.get("task") or not task.is_file():
+            continue
+        try:
+            reasons = [r.splitlines()[0][:200] for r in report.reasons[:5]]
+            board_module().gate_repeat(task, stamp, blocks, reasons, evidence)
+            entry.setdefault("repeats", []).append({"stamp": stamp, "places": sorted(here), "reasons": reasons})
+            entry["places"] = sorted(here | set(entry.get("places") or []))
+            entry["files"] = sorted({f.file for f in report.findings if f.severity == "block" and f.file} | set(entry.get("files") or []))
+            write_json(root / ESCALATIONS_REL, data)
+            board_module().note(root, "gates (gate.py)", f"gates знову здалися після {blocks} блоків поспіль на місці, питання про яке вже відкрите "
+                                f"(ескалація {entry.get('stamp')})", f"нової картки не відкрито: повтор дописано в `{entry['task']}`")
+        except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            print(f"gate: the repeat was not told in {task}: {exc}", file=sys.stderr)
+            return None
+        return str(entry["task"])
+    return None
+
+
+def sealed_tests(root: Path) -> set[str]:
+    """The contract test files testing.py sealed: the agent does not change them (`testing.py check`)."""
+    files: set[str] = set()
+    for path in sorted((root / TESTING_SEALS_REL).glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("files"), dict):
+            files.update(str(rel) for rel in data["files"])
+    return files
+
+
+def style_key(root: Path, f: Finding) -> str:
+    """Which style finding this is wherever its line moves: the file, the rule and the text of its
+    line (of a config file, the whole text)."""
+    text = new_text(root, "stop", str(f.file)) or ""
+    if f.line:
+        lines = text.splitlines()
+        text = lines[f.line - 1].strip() if 0 < f.line <= len(lines) else ""
+    return f"{f.file}\t{f.rule}\t{hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]}"
+
+
+def style_item(root: Path, f: Finding, key: str, why: str) -> str | None:
+    """The finding as a proposal in tasks/proposed/ — one per finding (board.open_item's key). None
+    without a board."""
+    where = f"{f.file}:{f.line}" if f.line else str(f.file)
+    try:
+        board = board_module()
+        path = board.open_item(
+            board.Board(root / "tasks"), "proposed", f"Gates: {f.rule} у {where} — прибрати або обґрунтувати",
+            f"Bypass guard знайшов у `{where}` [{f.rule}]: {f.message}. {why} Тести, lint і type-check цього не "
+            "стосуються, тож роботу не зупинено й ескалації не відкрито (задача 310).",
+            do="Прибрати причину або поставити `# gate-allow: <чому, хоча б два слова>` на тому самому рядку чи на рядку-коментарі "
+               "прямо над ним. Якщо файл — запечатаний contract test, змінити його можна лише зі згоди власника: питання в "
+               "`tasks/blocked/`, а після його «так» — `python3 .claude/hooks/testing.py reseal <slug> --owner-answer <картка>`.",
+            key="gate-style-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:12], source="gates (gate.py)")
+        return path.relative_to(root).as_posix() if path else None
+    except (ImportError, OSError, ValueError, TypeError, AttributeError) as exc:
+        print(f"gate: the style finding was not put on the task board: {exc}", file=sys.stderr)
+        return None
+
+
+def settle_style(report: Report, root: Path, giving_up: bool) -> list[str]:
+    """Turn into a `warn` every style block that need not stop the work: one already proposed, one
+    in a sealed contract test, and — when `giving_up` (the Nth block in a row, nothing but style) —
+    every one. Each gets its proposal; returns the proposals written now."""
+    try:
+        deferred = json.loads((root / STYLE_REL).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        deferred = {}
+    deferred = deferred if isinstance(deferred, dict) else {}
+    sealed = sealed_tests(root)
+    fresh: list[str] = []
+    for f in report.findings:
+        if f.severity != "block" or f.rule not in STYLE_RULES or not f.file:
+            continue
+        key = style_key(root, f)
+        if key in deferred:
+            item = str(deferred[key].get("item") or "") if isinstance(deferred[key], dict) else ""
+        elif f.file in sealed or giving_up:
+            why = ("Файл — запечатаний contract test, агент його не змінює." if f.file in sealed else
+                   "Gates блокували хід через це кілька разів поспіль, і агент цього не виправив.")
+            item = style_item(root, f, key, why) or ""
+            deferred[key] = {"file": f.file, "rule": f.rule, "line": f.line, "item": item, "since": utc_now()}
+            fresh.append(item or f"{f.file}:{f.line or ''} (no board)")
+        else:
+            continue
+        where = f"{f.file}:{f.line}" if f.line else str(f.file)
+        report.reasons = [r for r in report.reasons if not r.startswith(f"BYPASS GUARD {where} [{f.rule}]")]
+        f.severity = "warn"
+        f.message += f" — style only, not a stop (board 310): proposed in {item or 'no board'}"
+    if fresh:
+        try:
+            write_json(root / STYLE_REL, deferred)
+        except OSError as exc:
+            print(f"gate: cannot record the style findings in {STYLE_REL}: {exc}", file=sys.stderr)
+    return fresh
+
+
+def owner_answers(root: Path, transcript: str = "") -> list[str]:
+    """Close every escalation whose question in tasks/blocked/ the owner answered «так», at once,
+    and move the question to done/ (`board.py gate-answers`, the runner's list). Attended sessions
+    only: unattended an answer in the checkout may be the agent's own, and the runner, which tells
+    them apart, acts on it. An answer this session's own tools wrote (its transcript) is not the
+    owner's: it is wiped and asked again. Returns what was done, one line each."""
+    if not (root / "tasks").is_dir():
+        return []
+    said: list[str] = []
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import mode
+
+        if mode.unattended(root)[0]:
+            return []
+        board = board_module()
+        tasks = board.Board(root / "tasks")
+        lines = board.gate_answers(tasks)
+        mine = (shared_tree_module().own_files(root, transcript) or set()) if lines and transcript else set()
+        for line in lines:
+            name, stamp = line.split("\t")[:2]
+            path = tasks.tasks / "blocked" / name
+            rel = path.relative_to(root).as_posix()
+            if rel in mine:
+                board.gate_reject(path, by="gates", why="відповідь «так» записав інструмент цієї сесії агента, а не власник, тому її не "
+                                                       "прийнято. Дайте відповідь ще раз.")
+                board.note(root, "gates (gate.py)", f"відповідь «так» у `{rel}` записав інструмент сесії агента", "відповідь стерто, питання поставлено знову")
+                said.append(f"gates: the «так» in {rel} was written by this session's own tools — wiped, the question stands")
+                continue
+            closed = close_open(root, stamp, quiet=True) == 0
+            done = board.gate_done(tasks, path, "closed" if closed else "absent", by="gates у сесії, де ви відповіли")
+            board.note(root, "gates (gate.py)", f"власник відповів «так» на питання `{rel}`",
+                       (f"ескалацію {stamp} закрито в тій самій сесії, без runner-а" if closed else f"ескалація {stamp} вже не була відкрита")
+                       + f"; питання перенесено в `{done.relative_to(root).as_posix()}`")
+            said.append(f"gates: escalation {stamp} " + ("closed" if closed else "was not open")
+                        + f" on the owner's «так» in {rel} → {done.relative_to(root).as_posix()}")
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        print(f"gate: the owner's answers were not acted on: {exc}", file=sys.stderr)
+    return said
 
 
 def lessons(root: Path, action: str, text: str = "") -> str:
@@ -1400,7 +1624,7 @@ def quarantine(root: Path, env: dict[str, str], layer: str, files: list[str], di
 
 
 def layer_checks(root: Path, env: dict[str, str], layer: str, files: list[str],
-                 diff_ref: str | None, report: Report) -> None:
+                 diff_ref: str | None, report: Report, own: set[str] | None = None) -> None:
     full = layer in ("pre_commit", "ci")
     files = without_install(root, layer, files, diff_ref, report)   # before anything judges
     report.files = files
@@ -1413,7 +1637,7 @@ def layer_checks(root: Path, env: dict[str, str], layer: str, files: list[str],
     # the guard exists to see; so a config-only turn still reaches the guard.
     # Nor is a file that is gone: a turn that only deletes code still reaches the delete guard.
     if (layer == "stop" and not code and not any(is_config_file(f) for f in files)
-            and not deleted_code(root, layer, diff_ref, env)):
+            and not deleted_code(root, layer, diff_ref, env, own)):
         return
     started = time.perf_counter()
     if layer in ("stop", "pre_commit"):
@@ -1436,7 +1660,34 @@ def layer_checks(root: Path, env: dict[str, str], layer: str, files: list[str],
         simplify_signals(root, env, layer, files, report)
 
 
-def run_layer(layer: str, root: Path, files: list[str] | None, diff_ref: str | None) -> tuple[Report, str | None]:
+def not_ours(report: Report, own: set[str], foreign: list[str]) -> None:
+    """A shared tree: what a check found in a file this session did not write is the runner's."""
+    report.extra["shared_tree"] = {"own": sorted(own & set(report.files)), "foreign": foreign}
+    if foreign:
+        report.add(Finding(None, None, "shared-tree", "log",
+                           f"a board runner works in this tree: {len(foreign)} changed file(s) this session did not "
+                           "write are its work and are not judged here"))
+    for finding in report.findings:
+        if finding.severity == "block" and finding.file and finding.file not in own:
+            finding.severity = "log"
+            finding.message = f"not this session's file (the board runner's work): {finding.message}"
+    if not report.blocked:
+        report.reasons.clear()
+
+
+def whole_tree(report: Report) -> None:
+    """A shared tree whose session's writes cannot be told (proposal 1767): say why the runner's work is judged."""
+    why = ("a board runner works in this tree, but this session's transcript does not show every file it wrote "
+           "(a write through a variable, a git command, a formatter, a subagent with no transcript, or no transcript) "
+           "— so the whole tree is judged, the runner's work included; code work beside a runner belongs in a separate clone")
+    report.extra["shared_tree_whole"] = why   # not "shared_tree": which task an escalation holds stays as it was
+    report.add(Finding(None, None, "shared-tree", "log", why))
+    if report.blocked:
+        report.reasons.append(f"SHARED TREE NOT SPLIT: {why}.")
+
+
+def run_layer(layer: str, root: Path, files: list[str] | None, diff_ref: str | None,
+              own: set[str] | None = None) -> tuple[Report, str | None]:
     env = load_env(root)
     report = Report(layer=layer, root=root, started_utc=utc_now())
     if layer == "post_write":
@@ -1445,7 +1696,11 @@ def run_layer(layer: str, root: Path, files: list[str] | None, diff_ref: str | N
             context = layer_post_write(root, env, rel, report) or context
         return report, context
     selected = files if files else changed_files(root, layer, diff_ref)
-    layer_checks(root, env, layer, selected, diff_ref, report)
+    if own is None:
+        layer_checks(root, env, layer, selected, diff_ref, report)
+        return report, None
+    layer_checks(root, env, layer, [f for f in selected if f in own], diff_ref, report, own)
+    not_ours(report, own, [f for f in selected if f not in own])
     return report, None
 
 
@@ -1455,16 +1710,27 @@ def finish_stop(report: Report, root: Path, session: str) -> tuple[str, dict[str
     raw = load_env(root).get("GATE_MAX_BLOCKS", "")
     if raw.isdigit() and int(raw) > 0:
         limit = int(raw)
+    proposed = settle_style(report, root, giving_up=False)
+    told = ({"systemMessage": "GATE: style only, not a stop (board 310) — proposed for later: " + ", ".join(proposed)}
+            if proposed else {})
     if not report.blocked:
         write_count(root, session, 0)
         report.extra["stop"] = {"consecutive_blocks": 0, "max": limit, "escalated": False}
-        return "pass", {}
+        return "pass", told
     count = read_count(root, session) + 1
     escalated = count >= limit
     report.extra["stop"] = {"consecutive_blocks": count, "max": limit, "escalated": escalated}
     if not escalated:
         write_count(root, session, count)
         return "block", {}
+    if all(f.rule in STYLE_RULES for f in report.findings if f.severity == "block"):
+        proposed = settle_style(report, root, giving_up=True)
+        write_count(root, session, 0)
+        report.extra["stop"] = {"consecutive_blocks": count, "max": limit, "escalated": False, "deferred": True}
+        return "deferred", {"systemMessage": (
+            f"GATE: the Stop gate blocked {count} turns in a row on style alone (board 310). No escalation: the turn may "
+            "end, the work and the overseer's PASS do not wait, and the findings are proposals for later: "
+            + ", ".join(proposed))}
     write_count(root, session, 0)
     path = write_report(report, "escalated")
     task, busy = park_escalation(root, report, path, count)
@@ -1474,7 +1740,7 @@ def finish_stop(report: Report, root: Path, session: str) -> tuple[str, dict[str
                     f"task board when it is over (by the next Stop gate run or the board runner). Report: {REPORT_REL}")
     elif task:
         message += (f"a question to the owner on the task board: {task} — leave its answer line empty; "
-                    f"the board runner acts on the owner's answer. Report: {REPORT_REL}")
+                    f"the owner's «так» is acted on by the board runner, or attended by the next Stop gate. Report: {REPORT_REL}")
     else:
         message += f"parked in the parked log for a human (`python3 .claude/hooks/journal.py show parked`). Report: {REPORT_REL}"
     return "escalated", {"systemMessage": message}
@@ -1506,7 +1772,7 @@ def emit_stop(report: Report, root: Path, hook: bool, session: str) -> int:
     lessons(root, "collect")
     if report.findings and any(f.severity != "log" for f in report.findings):
         print(summarise(report), file=sys.stderr)
-    if result == "escalated":
+    if result in ("escalated", "deferred") or (result == "pass" and extra):
         if hook:
             print(json.dumps(extra, ensure_ascii=False))
         else:
@@ -1528,6 +1794,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="the owner's command: close a parked Stop-gate escalation")
     parser.add_argument("--ask-waiting", action="store_true",
                         help="put on the task board the questions that waited for a rebase or a merge to end")
+    parser.add_argument("--owner-answers", action="store_true",
+                        help="close the escalations the owner answered «так» on the board (SessionStart; board 310)")
     parser.add_argument("--files", nargs="*", default=None, help="files to check (default: the diff)")
     parser.add_argument("--diff", dest="diff_ref", default=None, help="diff base (default: HEAD)")
     parser.add_argument("--hook", action="store_true", help="speak Claude Code's hook protocol")
@@ -1538,10 +1806,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.ask_waiting:
         ask_waiting(root)
         return 0
+    if args.owner_answers:
+        for line in owner_answers(root, str(read_envelope().get("transcript_path") or "")):
+            print(line)
+        return 0
     if not args.layer:
         parser.error("--layer is required")
     files: list[str] | None = args.files
     session = "cli"
+    own: set[str] | None = None
     guarded: list[dict[str, Any]] = []
     try:
         if args.layer == "stop":
@@ -1549,6 +1822,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.hook:
             envelope = read_envelope()
             session = str(envelope.get("session_id") or "cli")
+            if args.layer == "stop":
+                for line in owner_answers(root, str(envelope.get("transcript_path") or "")):
+                    print(line, file=sys.stderr)
+            if args.layer == "stop" and files is None:
+                try:
+                    own = shared_tree_module().judged_files(root, envelope)
+                except ImportError:   # gate-allow: shared_tree.py missing beside the gate — the whole tree is judged, as before
+                    own = None
             if args.layer == "stop":
                 # Before every way out below (board 724): a turn that changed only the constitution
                 # changed no code, and a few hashes cost nothing on a stop another hook forced.
@@ -1577,7 +1858,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.layer == "stop" and not args.hook:
             guarded = protected_guard_module().at_stop(root, None)   # by hand: compared with HEAD, nothing put back
-        report, _ = run_layer(args.layer, root, files, args.diff_ref)
+        report, _ = run_layer(args.layer, root, files, args.diff_ref, own)
+        if args.layer == "stop" and args.hook and files is None and own is None:
+            try:
+                if shared_tree_module().shared(root):
+                    whole_tree(report)
+            except ImportError:   # gate-allow: shared_tree.py missing beside the gate — nothing to explain
+                pass
         if args.layer == "stop":
             add_guarded(report, guarded)
             code = emit_stop(report, root, args.hook, session)

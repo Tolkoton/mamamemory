@@ -33,7 +33,8 @@ RECORD. The agent answers with one JSON object. This script — never a model �
 the schema (the first failure goes back to the agent, the second is recorded INVALID), compares
 the tree with the fingerprint (HEAD, `git status`, the content of every changed or untracked file;
 ignored files do not count) and the contract with its sha256 — any difference makes the verdict
-INVALID, nothing is rolled back — refuses a PASS while the Stop gate's escalation is open, and then
+INVALID, nothing is rolled back; a file under .engine/artifacts/ apart, which the project's own checks
+write again when they run (a smoke script's output: board 307), and which the row names as `regenerated` — refuses a PASS while the Stop gate's escalation is open, and then
 writes the entry into the ledger (this session's own file of it, .engine/journal/ledger/, board 739) and a row into
 .claude/state/overseer/verdicts.jsonl. Hooks decide on the second file; the ledger is for people
 and for the next overseer.
@@ -87,6 +88,10 @@ LEDGER_SHOWN = "the ledger, `python3 .claude/hooks/journal.py show ledger` (newe
 BOARD_STATE_REL = Path(".claude/state/board")   # the board runner's state: its lock, and the marker left for it
 VERDICTS = ("PASS", "BLOCK", "ADR_REQUIRED", "ESCALATE")
 INVALID = "INVALID"
+# What the project's own checks write again when the auditor runs them — a smoke script's output, a run's report
+# (board 307: ThinkHow's smoke script rewrote .engine/artifacts/step-results/smoke.txt and three audits went INVALID).
+# A change there during an audit leaves the verdict valid; a change anywhere else (code, tests, the contract) voids it.
+REGENERATED_PREFIXES = (".engine/artifacts/",)
 CATEGORIES = ("strategy", "recovery", "optimization", "none")
 MAX_BLOCKS = 3      # the owner's number (board 015, answer 4): three BLOCKs on one unit park the task
 MAX_ASKS = 3        # the request itself and two repeats; then the item is parked and the turn ends
@@ -195,6 +200,11 @@ def fingerprint_diff(before: JsonObj | None, after: JsonObj | None) -> list[str]
     changed = ["HEAD"] if before.get("head") != after.get("head") else []
     old, new = before.get("files") or {}, after.get("files") or {}
     return changed + sorted(rel for rel in set(old) | set(new) if old.get(rel) != new.get(rel))
+
+
+def regenerated(rel: str) -> bool:
+    """A path the project's checks write again on every run (REGENERATED_PREFIXES): its change is no edit."""
+    return rel.startswith(REGENERATED_PREFIXES)
 
 
 # ------------------------------------------------------------------ the turn's evidence
@@ -579,6 +589,8 @@ def ledger_entry(row: JsonObj, obj: JsonObj | None) -> str:
         lines.append("- Test gaps: " + one_line("; ".join(
             f"{g['check']} — {g['misses']}" + (f" → {g['task']}" if g.get("task") else " (no task board: recorded here only)")
             for g in gaps), 1500))
+    if row.get("regenerated"):
+        lines.append("- Regenerated during the audit (not an edit): " + one_line(", ".join(row["regenerated"]), 600))
     if obj and isinstance(obj.get("devils_advocate"), str) and obj["devils_advocate"].strip():
         lines.append(f"- Devil's advocate: {one_line(obj['devils_advocate'], 1200)}")
     if obj and verdict == "ADR_REQUIRED":
@@ -737,6 +749,9 @@ def record(root: Path, envelope: JsonObj) -> JsonObj | None:
         return None
     assert obj is not None
     changed = fingerprint_diff(request.get("tree"), tree_fingerprint(root))
+    if any(regenerated(rel) for rel in changed):
+        row["regenerated"] = [rel for rel in changed if regenerated(rel)][:50]
+        changed = [rel for rel in changed if not regenerated(rel)]
     if changed:
         finish(INVALID, "tree changed during audit: " + ", ".join(changed[:12])
                + (f" and {len(changed) - 12} more" if len(changed) > 12 else ""), obj, changed=changed[:50])

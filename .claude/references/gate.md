@@ -109,6 +109,13 @@ unreadable lock, a lock written before `seeds` existed: nothing is taken on trus
 keeps `protected_guard.py`, compared with HEAD, from reporting the untouched constitution,
 settings and `.engine/rules.md` of such an install.
 
+**An update not yet committed** (board 120, item 1750). `engine.py update` in a project whose
+engine is already committed rewrites files the base has, so the rule above does not reach them.
+Such a file is left out too when the base's own lock recorded exactly the base's blob (the
+engine's file as it shipped, untouched) **and** the working lock records exactly the working
+content. The owner's committed edit of an engine file fails the first condition, a turn's edit
+after the update the second — and then the whole file is judged, the update's own lines with it.
+
 ## The bypass guard (stop, pre_commit)
 
 A block when the turn's diff **adds** a `# type: ignore`, a `# noqa`, `pytest.mark.skip` /
@@ -147,14 +154,17 @@ at `pre_commit`) deletes working code no test touched:
 
 | Deleted | Counts when |
 |---|---|
-| a function, a method, a class | its name is defined nowhere in the new text of the file |
+| a function, a method, a class | its name is defined nowhere in the new text of the file, and its body is not moved (below) |
 | a file | it is gone (a Python file: each of its functions and classes is judged) |
 | lines inside one function | more than `DELETE_GUARD_LINES` (default 20) code lines; docstrings, comments and blank lines are not counted |
 
 Working code is a file with an extension of `CODE_EXTENSIONS` that is not a test (a `tests/`,
 `test/`, `spec/`, `__tests__/` directory, `test_*`, `*_test`, `*.test`, `*.spec`, `conftest`).
 **A move is not a deletion:** a function or class whose name is defined anew anywhere in the same
-change, and a removed line that the same change adds again anywhere, do not count. For a language
+change; one whose body — without the `def`/`class` line, the docstring, comments and blank lines, its own name
+aside — a definition new to the same change carries under another name (a file git does not know
+yet counts at `stop`); and a removed line that the same change adds again anywhere, do not count.
+A rename whose body changed is still a deletion. For a language
 other than Python there are no names: the unit is the file and its removed lines.
 
 **Was there a test** — the more exact way wins:

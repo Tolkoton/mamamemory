@@ -88,12 +88,12 @@ work runs through the task board only (below); detail: `.claude/references/unatt
 
 ## The task board and extra sessions
 Work arrives as files in `tasks/` (`tasks/README.md`): take the first `todo/` task with its
-dependencies in `done/`, move it to `doing/` in its own commit, end in `done/NNN-name/` with `report.md` —
-or in `blocked/` with a question for the owner. Extra Claude sessions (evals, critics, measurements) are
-ordinary work under a weekly cap: at it start none, commit, `board.py extra-wait` (README rule 12). The
-overseer's audit run needs `Аудит потрібен: так`. Full tests once. Quality over price: no dollar limit; only
-`BOARD_MAX_USD` guards a loop (it parks the task). Only the owner puts work into `todo/`: a finding is a proposal
-(`proposed/`), a guard's designed limit is not work (rule 13). For the owner technical terms stay English: `unattended.md`.
+dependencies in `done/`, move it to `doing/` in its own commit, end in `done/NNN-name/` with `report.md` — or
+in `blocked/` with a question for the owner. Extra Claude sessions are ordinary work under a weekly cap
+(`board.py extra-wait`, rule 12). `Аудит потрібен: так` for the audit run. Full tests once. Quality over price:
+no dollar limit; `BOARD_MAX_USD` guards a loop. Only the owner puts work into `todo/` (`proposed/`; rule 13). An inbox
+file is the owner's word, the owner's or the owner's operator's (rule 14): never write the inbox; an answer recorded
+from the owner's words has date, place, verbatim quote. For the owner technical terms stay English: `unattended.md`.
 
 ## Constitution
 Every agent reads and obeys `.claude/constitution.md`. It overrides any conflicting

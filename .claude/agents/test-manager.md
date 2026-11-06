@@ -45,8 +45,8 @@ One question: **who writes the contract tests of this slice — the independent 
 - **O4** — on the previous slice of this block (`earlier_in_block`, the last entry) a dispute
   ended "the code was wrong", the tester found an ambiguity of the contract, or the overseer
   blocked on check #4: this area has already shown that readings differ.
-- **O8** — the slice changes existing code no test touches (`existing_code_the_slice_changes`
-  has an entry with `touched: false`): the first tests of that code are not written by the one
+- **O8** — the slice changes existing code no test touches — under SOURCE_DIRS when it is set
+  (`existing_code_the_slice_changes` has an entry with `touched: false`): the first tests of that code are not written by the one
   who has just changed it.
 
 **Otherwise you judge.** You may answer `builder` ("do not switch") only when BOTH hold, and you
@@ -118,7 +118,9 @@ for each of three checks: `now`, `defer` (with `until`: `block-closed:<block>` o
 - **O7** — point (a) said `builder`, and the slice gave a self-added behaviour or an overseer
   block on #4: `catch_up` is `now` — "small and uniform" did not hold.
 - **O8** — the diff changed working code no test touches, the slice's own tests counted
-  (`changed_code_and_tests` has `touched: false`): `catch_up` is `now`.
+  (`changed_code_and_tests` has `touched: false`): `catch_up` is `now`. With SOURCE_DIRS set,
+  working code is code under it only: a smoke script or a spike probe outside it is the
+  builder's, the overseer runs it with the exit criterion, and the tester writes no test of it.
 
 **A block** is what `/feature-architect` labelled in «Slices (the DAG)»; you read blocks, you do
 not invent them. **A large block** is your judgement, and there is no number: a block is large

@@ -125,6 +125,10 @@ wildcard:
 ! mkdir -p ~/engine-ops/tasks-inbox && cp /tmp/owner-review-<date>-<time>/<file 1> /tmp/owner-review-<date>-<time>/<file 2> ~/engine-ops/tasks-inbox/
 ```
 
-Never run it yourself and never report the files as delivered: say they wait for that command.
+If the owner says the files go through their operator (board 405: an agent outside Claude Code or a person who
+acts in the terminal for the owner, named in `~/engine-ops/operator.md`), hand the operator the same full paths and
+the target inbox the way the owner set up — never `cp` it yourself; the operator's copy is the owner's word as
+much as the owner's own. Never run it yourself and never report the files as delivered: say they wait for that command
+or for the operator.
 Print the command for the next review — the last line of the document. Then stop: starting the
 runner, pushing, or applying anything is not part of the review.

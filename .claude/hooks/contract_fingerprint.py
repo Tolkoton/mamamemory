@@ -9,10 +9,17 @@ overseer then audits the work against it. Nothing stopped a session from editing
 contract afterwards: lower the exit criterion, drop a behaviour from the list, and the audit
 passes against a goalpost that moved. `seal` writes the SHA-256 of the contract as it was
 approved into machine state (`.claude/state/contracts/<slug>.sha256`) and REFUSES to
-overwrite a fingerprint that exists — re-approving a changed contract is a human act (delete
-the fingerprint consciously, or run /plan-slice on a new slug). `check` compares the
+overwrite a fingerprint that exists — re-approving a changed contract is the owner's act (their
+«так» under the question that offers `reseal-contract`, below, or /plan-slice on a new slug). `check` compares the
 contract on disk with its fingerprint; overseer_stop.py calls it before injecting an audit
 request and, on a mismatch, escalates instead of auditing.
+
+RESEALING (board 308). The owner's re-approval of a changed contract is their answer «так» under
+the question that shows the change and offers `Дія runner-а: reseal-contract <slug> <sha256 of the
+new text>` (board.py `action-line reseal-contract <slug>`). The runner then calls `reseal` through
+owner_action.py, which refuses inside a Claude Code session: the new fingerprint is written only
+when the contract is still the text the owner saw. There is no command here for it — an agent
+neither writes nor deletes a fingerprint that exists.
 
 Exit status: 0 sealed / match; 3 fingerprint exists (seal) or contract changed (check);
 4 no fingerprint (check — a contract approved before this existed is audited as before);
@@ -52,7 +59,8 @@ def seal(root: Path, contract: Path) -> int:
     if target.exists():
         print(
             f"REFUSED: {target.relative_to(root)} already holds the fingerprint of an approved contract. "
-            "A changed contract is re-approved by a human: delete the fingerprint on purpose, or plan a new slug.",
+            "A changed contract is re-approved by the owner: ask with `board.py action-line reseal-contract <slug>` "
+            "under the question (board 308), or plan a new slug.",
             file=sys.stderr,
         )
         return EXIT_MISMATCH
@@ -60,6 +68,24 @@ def seal(root: Path, contract: Path) -> int:
     value = digest(contract)
     target.write_text(f"{value}  {contract.relative_to(root).as_posix() if contract.is_relative_to(root) else contract}\n", encoding="utf-8")
     print(f"sealed {contract.relative_to(root) if contract.is_relative_to(root) else contract}  sha256 {value[:12]}…  -> {target.relative_to(root)}")
+    return EXIT_OK
+
+
+def reseal(root: Path, contract: Path, approved: str) -> int:
+    """The owner's re-approval (board 308): seal `contract` anew, over the old fingerprint, only when
+    it is the text whose sha256 the owner said «так» to. Called by owner_action.py, never from the CLI."""
+    if not contract.is_file():
+        print(f"owner-action: no contract {contract.name}; nothing is resealed", file=sys.stderr)
+        return EXIT_MISMATCH
+    actual = digest(contract)
+    if actual != approved:
+        print(f"owner-action: {contract.name} is {actual}, the owner approved {approved or '(no sha256)'}; not resealed", file=sys.stderr)
+        return EXIT_MISMATCH
+    target = fingerprint_path(root, contract)
+    before = target.read_text(encoding="utf-8").split()[0] if target.is_file() else "(none)"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"{actual}  {contract.relative_to(root).as_posix() if contract.is_relative_to(root) else contract}\n", encoding="utf-8")
+    print(f"owner-action: {contract.name} resealed on the owner's answer: {before[:12]}… -> {actual[:12]}…")
     return EXIT_OK
 
 
