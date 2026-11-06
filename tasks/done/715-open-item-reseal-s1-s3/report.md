@@ -23,6 +23,11 @@ uv run pytest -q tests/test_store.py tests/test_auth_callback.py tests/test_conf
   slice-у several-tasks: його відкрито о 22:51:34Z, і коду для нього ще немає. RED тут очікуваний, і до цієї задачі він не стосується.
   162 зелені — та сама цифра, що й у картці.
 
+- Пізніше, вже після цього reseal, печатку S3 переписав інший процес: о 23:09:17Z slice several-tasks провів
+  dispute round 2 для `tests/test_one_task_planning.py` і запечатав файл наново (`.engine/testing/ledger.md`,
+  «2026-11-06T23:09:17Z — one-task-to-calendar — dispute, round 2 of 2»). Тому зараз у файлі печаток S3 немає
+  рядка `resealed` з цією карткою. Reseal за вашим «так» відбувся о 22:48:59Z, і журнал це досі показує.
+
 ## Витрати
 Додаткових сесій Claude не було. Лише ця сесія runner-а.
 

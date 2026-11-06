@@ -21,3 +21,18 @@
 - Record: tasks/done/715-open-item-reseal-s1-s3/report.md
 - Reason: src/mamamemory/planning/placement.py changed while the report tasks/done/715-open-item-reseal-s1-s3/report.md was read
 - Request: 20261106T230514Z-5a44af (attempt 1)
+
+## 2026-11-06T23:08:24Z — 715-open-item-reseal-s1-s3 — READER_INVALID
+- Record: tasks/done/715-open-item-reseal-s1-s3/report.md
+- Reason: src/mamamemory/planning/__init__.py changed while the report tasks/done/715-open-item-reseal-s1-s3/report.md was read
+- Request: 20261106T230746Z-76e51b (attempt 1)
+
+## 2026-11-06T23:09:52Z — 715-open-item-reseal-s1-s3 — READER_INVALID
+- Record: tasks/done/715-open-item-reseal-s1-s3/report.md
+- Reason: .engine/testing/ledger.md, tests/test_one_task_planning.py changed while the report tasks/done/715-open-item-reseal-s1-s3/report.md was read
+- Request: 20261106T230851Z-a99ff1 (attempt 1)
+
+## 2026-11-06T23:11:08Z — 715-open-item-reseal-s1-s3 — READER_PASS
+- Record: tasks/done/715-open-item-reseal-s1-s3/report.md
+- Reason: The references I could check all hold. The ledger entries at 22:48:59Z, 22:49:19Z, 22:51:34Z and 23:09:17Z say what the report says. The seal files show 11 and 6 sealed files and the access-shell `resealed` entry for card 715. Commit db058f2 is in the git reflog with the subject «→ doing». The task's only item (carry out the owner's «так» and report it) is done, and the report has no open question. Technical terms in the report are in English (gate, audit, slice, runner, reseal, contract tests, commit).
+- Request: 20261106T231016Z-b759ac (attempt 1)
