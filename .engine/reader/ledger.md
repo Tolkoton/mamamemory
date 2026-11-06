@@ -16,3 +16,8 @@
 - Record: tasks/done/402-cleanup-2026-11-06/report.md
 - Reason: All four questions hold. The checkable references match: the six signals and the decide line and complexity in signals-full.json, and the 401 report's analysis of the false unused-dependency alarms. Each item of «Що зробити» is answered: nightly was run, it printed no sharp growth, so there was no simplifier pass, nothing was removed and no tests were needed. There are no open questions, and the technical terms (simplifier, signals, runner, commit, nightly) are in English.
 - Request: 20261106T031831Z-d8eb2a (attempt 1)
+
+## 2026-11-06T23:06:04Z — 715-open-item-reseal-s1-s3 — READER_INVALID
+- Record: tasks/done/715-open-item-reseal-s1-s3/report.md
+- Reason: src/mamamemory/planning/placement.py changed while the report tasks/done/715-open-item-reseal-s1-s3/report.md was read
+- Request: 20261106T230514Z-5a44af (attempt 1)
