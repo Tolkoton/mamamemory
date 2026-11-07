@@ -40,9 +40,8 @@ the next unblocked item. A `gate-allow` is not a way through: the overseer reads
 - `overseer_stop.py` injects `OVERSEER_REQUEST <id>` only when a turn claims a unit complete: the
   sentinel `=== UNIT N COMPLETE ===` alone on its own line AND, in the same turn, a verification
   command, AND code under a code path (`.claude/project.env`) that changed since the last audit
-  request, written by any tool. Emit the sentinel only for a
-  genuine unit — `N` from `.engine/slices/<slug>.md`, else `1` — never on a work-in-progress,
-  RED-only or question-answering turn.
+  request, written by any tool. Emit the sentinel only for a genuine unit — `N` from
+  `.engine/slices/<slug>.md`, else `1` — never on a work-in-progress, RED-only or answering turn.
 - On `OVERSEER_REQUEST <id>`: launch the agent `overseer` (fresh context, no editing tool) with
   exactly that line as its prompt, change nothing until it answers, then end the turn. You never
   audit or write a verdict: `overseer_verdict.py` writes the ledger from the agent's answer, and
@@ -67,7 +66,8 @@ A verdict records a finding. Route by whether the fix needs a human, not by the 
 - A deviation from an explicit owner instruction is classified by reversibility like anything
   else: if its premise is shown false, say so once, do what is right, log it, continue. A
   one-way door or an Article 5 product decision is parked, never decided alone.
-- Attended, `AskUserQuestion` is cheap and right. Unattended, never block on it.
+- Attended, `AskUserQuestion` is only for the three reasons to stop and Article 5; unattended, never.
+  A two-way door with your own advice: decide, log, continue. Never ask «run it now?» after an approval.
 
 ## The three reasons to stop, and there are no others
 (1) Something only a human can supply — a credential, a deploy, a provisioning step, a person
@@ -77,7 +77,7 @@ Not reasons: a background task in flight (do non-racing work; its notification w
 something worth reporting (report while continuing), a two-way door you already decided (log
 it), a natural-feeling pause. Address the human only for one of the three, or when three parked
 items await ratification (`unattended.md`). To stop for real, emit an `OVERSEER_` halt marker
-naming the reason.
+naming the reason — the Stop hook refuses it while a slice of the DAG can start (`slice_queue.py`).
 
 ## Attended vs unattended
 `.claude/state/overseer/mode` containing `unattended` means nobody is watching; absent or

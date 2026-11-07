@@ -23,9 +23,18 @@ TRIGGER — both signals required:
                     path (configured via SOURCE_DIRS / CODE_EXTENSIONS in
                     .claude/project.env) — or a code path that differs in the
                     TREE from what the last audit request saw, whichever tool
-                    wrote it (a shell command, a script) — AND a Bash
-                    verification command (configured via CHECK_CMDS, or
-                    built-in broad default).
+                    wrote it (a shell command, a script), or a commit of the
+                    open task whose working code no PASS saw (check-close's
+                    rule, mode.open_task_unaudited, board 411; not while the
+                    last request's verdict is a BLOCK on that same tree) — AND
+                    a Bash verification command (configured via CHECK_CMDS,
+                    or built-in broad default).
+
+A CLAIM NOT TAKEN IS ANSWERED (board 411). ThinkHow 737 claimed a unit that changed only tests/
+and scripts/ (outside SOURCE_DIRS) and waited for an audit that never came, committing nothing.
+A sentinel the hook does not take now gets one block naming why — no working code to audit (commit
+it; a task with no working code closes through the reader), a BLOCK on the same code (fix first),
+no verification command (run it) — once per reason, HEAD and conversation (`.claim_refused`).
 
 RECURSION GUARDS — per-branch, by design:
   - Audit request    — `.claude/state/overseer/.last_audit_sha`, the SHA of the last message whose
@@ -33,7 +42,9 @@ RECURSION GUARDS — per-branch, by design:
   - Typed markers    — `.claude/state/overseer/.last_continue_sha`, the SHA of the last message
                        that was told its typed `OVERSEER_PASS` / `OVERSEER_REQUEST` means nothing.
   - Halt markers (BLOCK / ESCALATE / ADR_REQUIRED / SLICE_AWAITING_OWNER /
-    SLICE_COMPLETE) silent-pass — owner takes over.
+    SLICE_COMPLETE) silent-pass — owner takes over. Except (board 314): SLICE_AWAITING_OWNER /
+    SLICE_COMPLETE while a slice of the feature DAG can start (slice_queue.py) is refused once per
+    queue — `.claude/state/overseer/.halt_refused` holds the SHA of the slices it named.
 
   `stop_hook_active` is deliberately not a guard: every hook-initiated turn arrives with it set,
   so it would make the request and the "continue" unreachable in the autonomous loop.
@@ -231,10 +242,27 @@ def _is_code_path(
 
 CONTINUE_REASON = (
     "OVERSEER_PASS recorded. Proceed with the next unit per the active slice plan in .engine/slices/. "
-    "Do the next pending UNIT's work (code edits + verification commands), then emit `=== UNIT N COMPLETE ===` on its own line. "
-    "If the slice has no more code units (only smoke / G4 owner-driven steps remain), or if you are uncertain what UNIT N is, "
-    "emit `OVERSEER_SLICE_AWAITING_OWNER: <reason>` on its own line to halt and request owner input. "
-    "If the slice's last code unit is complete and smoke / G4 are next, emit `OVERSEER_SLICE_AWAITING_OWNER: smoke and G4 are owner-driven; awaiting owner walkthrough.`"
+    "Do the next pending UNIT's work (code edits + verification commands), then emit `=== UNIT N COMPLETE ===` on its own line; "
+    "the contract's units say what UNIT N is. "
+    "If the slice has no more code units and only owner-driven steps remain (smoke, G4, a walkthrough, a deploy), they are "
+    "not a reason to stop: park them on the board (`python3 .claude/unattended/board.py open-item --to blocked --title … "
+    "--what … --question …`), mark the slice's card in .engine/PROGRESS.md (`CODE COMPLETE — SMOKE PARKED`) and take the "
+    "next slice the feature DAG lets start — its plan with /plan-slice when it has none (`python3 .claude/hooks/slice_queue.py` "
+    "lists them). Emit `OVERSEER_SLICE_AWAITING_OWNER: <reason>` on its own line only when nothing in the DAG can start: "
+    "this hook reads the DAG and refuses the marker while a slice can."
+)
+# Board 314: a halt that claims "nothing can move" while the DAG says otherwise.
+QUEUE_HALT_RE = re.compile(_MARKER_PREFIX + r"(?:SLICE_AWAITING_OWNER|SLICE_COMPLETE)\b", re.MULTILINE)
+HALT_REFUSED_REASON = (
+    "HALT REFUSED — {slices} can start: the feature DAG still has a slice that is not started and whose "
+    "dependencies are all satisfied. A halt claims that nothing can move (.claude/engine-rules.md, «The three "
+    "reasons to stop»); what waits for the owner — smoke, G4, a walkthrough, a deploy — is parked on the board "
+    "(`python3 .claude/unattended/board.py open-item --to blocked --title … --what … --question …`), not waited "
+    "for. Take {first}: plan it with /plan-slice when .engine/slices/<slug>.md does not exist yet, then build it. "
+    "If it truly cannot start either, record that where the DAG is read — its status `parked` in "
+    ".engine/architecture/feature-dag.json, or its card `## Slice <id> — <slug> (PARKED — <why>)` in "
+    ".engine/PROGRESS.md — together with its board item, and halt again. `python3 .claude/hooks/slice_queue.py` "
+    "lists what can start."
 )
 
 # --- the texts the builder gets ---------------------------------------------------------------
@@ -317,6 +345,33 @@ FRESH_REQUEST_TYPED_REASON = (
     "the line that command prints; (4) report the agent's verdict as it gave it. Do not audit the turn "
     "yourself."
 )
+CLAIM_NEXT_STEP = (
+    "Do not wait for an audit: none is coming. Commit the verified result now — unattended, through "
+    "`.claude/unattended/commit_checkpoint.sh <node>` on the run's own `unattended/*` branch; attended, stage it "
+    "for the human — and go on. A task none of whose commits changed working code closes through the reader "
+    "(`python3 .claude/hooks/reader.py request <task> --report`, then the agent `reader` with the line it prints)."
+)
+CLAIM_REFUSED_REASONS = {
+    "no-code": (
+        "UNIT CLAIM NOT TAKEN — no audit will be requested. The sentinel stands on working code, and there is "
+        "none to audit: no code path ({source} in .claude/project.env) changed since the last audit request, and "
+        "every commit of the task with working code already has a PASS that saw it (the rule of "
+        "`python3 .claude/hooks/mode.py check-close`). A change only to tests, scripts or documents outside the "
+        "code paths is not audited by the overseer. " + CLAIM_NEXT_STEP
+    ),
+    "blocked": (
+        "UNIT CLAIM NOT TAKEN — the overseer's last audit (request {request}) answered BLOCK on exactly this "
+        "code, and no code path changed since. The same code is not audited again: fix what the BLOCK names, "
+        "run the verification, and claim the unit again — another overseer judges the fix. If it cannot be "
+        "fixed without the owner, park it (`python3 .claude/unattended/board.py open-item --to blocked …`)."
+    ),
+    "no-check": (
+        "UNIT CLAIM NOT TAKEN YET — working code changed, but no verification command ran since the last "
+        "audit (the commands of CHECK_CMDS: {checks}). Run the project's check — its tests, lint or "
+        "type-check — show the output, and claim the unit again: then the audit is requested. Do not wait "
+        "for an audit before that."
+    ),
+}
 NOT_WIRED_REASON = (
     "OVERSEER NOT WIRED — this unit cannot be audited. Every audit is done by the agent `overseer` and "
     "recorded by .claude/hooks/overseer_verdict.py, which works only through two handlers in "
@@ -624,22 +679,83 @@ def _code_changed_in_tree(project_dir: Path, source_dirs: list[str], code_extens
         return False
 
 
-def _claimed_unit(project_dir: Path, envelope: dict[str, object], message: str) -> str | None:
-    """The unit number when this message is a NEW completion claim: the sentinel, not yet answered,
-    and — since the last overseer audit of this turn — a code edit plus a verification command."""
+def _last_blocked(project_dir: Path) -> str:
+    """The id of the last audit request when the overseer answered it BLOCK, else "": the code it saw,
+    unchanged, is not audited again — a fix comes first (no verdict shopping)."""
+    import overseer_verdict as ov
+
+    try:
+        last = ov.last_request(project_dir) or {}
+        row = ov.verdict_for(project_dir, str(last.get("id", ""))) if last.get("id") else None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+    return str(last["id"]) if row is not None and row.get("verdict") == "BLOCK" else ""
+
+
+def _task_code_unaudited(project_dir: Path) -> bool:
+    """The open task has committed working code no PASS saw — check-close's rule, from its one reader
+    (mode.open_task_unaudited, board 411): a claim stands on it even with nothing edited since the last
+    request. Task 315: the last request was another task's audit whose HEAD held 315's commit, so the tree
+    looked seen, and check-close still found no PASS of 315 on that commit."""
+    try:
+        import mode
+
+        return not _last_blocked(project_dir) and bool(mode.open_task_unaudited(project_dir))
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        return False
+
+
+def _claim(project_dir: Path, envelope: dict[str, object], message: str) -> tuple[str | None, str]:
+    """(the unit number, "") when this message is a NEW completion claim: the sentinel, not yet answered,
+    and — since the last overseer audit of this turn — working code to audit plus a verification command.
+    Otherwise (None, why): `none` (no sentinel, or already answered), `no-code`, `blocked` (nothing changed
+    since the overseer's BLOCK), `no-check`."""
     import overseer_verdict
 
     found = UNIT_NUMBER_RE.search(message)
     if not found or _already_audited(project_dir, message):
-        return None
+        return None, "none"
     cfg = _load_project_env(project_dir)
     source_dirs, code_extensions = _build_source_dirs(cfg), _build_code_extensions(cfg)
     check_cmd_re = _build_check_cmd_re(cfg)
     events = overseer_verdict.since_last_audit(overseer_verdict.turn_events(_str_field(envelope, "transcript_path")))
-    edited = any(e["tool"] in EDIT_TOOLS and _is_code_path(str(e["input"].get("file_path", "")), source_dirs, code_extensions)
-                 for e in events) or _code_changed_in_tree(project_dir, source_dirs, code_extensions)
-    checked = any(e["tool"] == "Bash" and check_cmd_re.search(str(e["input"].get("command", ""))) for e in events)
-    return found.group(1) if edited and checked else None
+    edited = (any(e["tool"] in EDIT_TOOLS and _is_code_path(str(e["input"].get("file_path", "")), source_dirs, code_extensions)
+                  for e in events)
+              or _code_changed_in_tree(project_dir, source_dirs, code_extensions) or _task_code_unaudited(project_dir))
+    if not edited:
+        return None, "blocked" if _last_blocked(project_dir) else "no-code"
+    if not any(e["tool"] == "Bash" and check_cmd_re.search(str(e["input"].get("command", ""))) for e in events):
+        return None, "no-check"
+    return found.group(1), ""
+
+
+def _claimed_unit(project_dir: Path, envelope: dict[str, object], message: str) -> str | None:
+    return _claim(project_dir, envelope, message)[0]
+
+
+def _claim_refused(project_dir: Path, envelope: dict[str, object], why: str) -> None:
+    """Board 411: a claim the hook does not take is never ignored in silence — the builder of ThinkHow 737
+    waited for an audit that was never coming and committed nothing. Told once for the same reason on the
+    same HEAD in the same conversation (`.claim_refused`): a builder that claims again unchanged passes."""
+    if why not in CLAIM_REFUSED_REASONS:
+        return
+    import gate
+
+    head = gate.lines_of(gate.git(project_dir, "rev-parse", "-q", "--verify", "HEAD"))
+    seen = project_dir / ".claude" / "state" / "overseer" / ".claim_refused"
+    digest = _message_digest("\n".join([why, head[0] if head else "", _str_field(envelope, "transcript_path")]))
+    try:
+        if seen.is_file() and seen.read_text(encoding="utf-8").strip() == digest:
+            return
+        seen.parent.mkdir(parents=True, exist_ok=True)
+        seen.write_text(digest + "\n", encoding="utf-8")
+    except OSError:
+        return
+    cfg = _load_project_env(project_dir)
+    _emit_block(CLAIM_REFUSED_REASONS[why].format(
+        source=f"SOURCE_DIRS=\"{cfg.get('SOURCE_DIRS', '')}\"" if cfg.get("SOURCE_DIRS", "").strip()
+        else f"CODE_EXTENSIONS=\"{cfg.get('CODE_EXTENSIONS', '')}\"",
+        checks=cfg.get("CHECK_CMDS", "").strip() or _DEFAULT_CHECK_CMDS, request=_last_blocked(project_dir)))
 
 
 def _three_blocks(project_dir: Path, unit: str, request_id: str, finding: str, blocks: list[dict[str, object]]) -> NoReturn:
@@ -718,7 +834,7 @@ def _main_fresh(envelope: dict[str, object], project_dir: Path) -> NoReturn:
 
     # A new claim is audited whatever else the message says — a halt marker beside the sentinel
     # does not buy the unit out of its audit.
-    unit = None if _phase_is_plan(project_dir) else _claimed_unit(project_dir, envelope, message)
+    unit, refused = (None, "none") if _phase_is_plan(project_dir) else _claim(project_dir, envelope, message)
     if unit is not None:
         _record_audit(project_dir, message)
         changed = _contract_changed(project_dir)
@@ -742,14 +858,41 @@ def _main_fresh(envelope: dict[str, object], project_dir: Path) -> NoReturn:
     if answer is not None:
         _emit_block(answer)
 
+    if not HALT_MARKER_RE.search(message):
+        _claim_refused(project_dir, envelope, refused)
     if HALT_MARKER_RE.search(message):
         _drop_request(project_dir)
+        _refuse_halt_while_queue_moves(project_dir, message)
         _passthrough()
     if PASS_MARKER_RE.search(message) and not _same_continue_message(project_dir, message):
         _emit_block(FRESH_PASS_IGNORED_REASON)
     if REQUEST_TYPED_RE.search(message) and not _same_continue_message(project_dir, message):
         _emit_block(FRESH_REQUEST_TYPED_REASON)
     _passthrough()
+
+
+def _refuse_halt_while_queue_moves(project_dir: Path, message: str) -> None:
+    """Board 314: an AWAITING_OWNER / SLICE_COMPLETE halt does not end the turn while a slice of the DAG can
+    start (slice_queue.py). Told once for each queue: when the same slices are named again, the builder has
+    seen the refusal and the halt passes — a DAG the hook misreads never holds a session. In the planning
+    phase a halt is a planning gate (the frame, an oscillating loop), and passes."""
+    if not QUEUE_HALT_RE.search(message) or _phase_is_plan(project_dir):
+        return
+    import slice_queue
+
+    slices = slice_queue.startable(project_dir)
+    if not slices:
+        return
+    seen = project_dir / ".claude" / "state" / "overseer" / ".halt_refused"
+    digest = _message_digest("\n".join(slices))
+    try:
+        if seen.is_file() and seen.read_text(encoding="utf-8").strip() == digest:
+            return
+        seen.parent.mkdir(parents=True, exist_ok=True)
+        seen.write_text(digest + "\n", encoding="utf-8")
+    except OSError:
+        return
+    _emit_block(HALT_REFUSED_REASON.format(slices=", ".join(slices), first=slices[0]))
 
 
 def _main_unwired(envelope: dict[str, object], project_dir: Path) -> NoReturn:

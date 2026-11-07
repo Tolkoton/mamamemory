@@ -186,10 +186,19 @@ NO round history. This catches what the round-anchored critic drifted past
 
 - `CRITIC_PASS` → proceed to write.
 - `CRITIC_REVISE` with a BLOCKING objection → resolve it, then re-run the
-  cold-reader once. If it blocks again → emit OVERSEER_SLICE_AWAITING_OWNER with
-  the objection; stop.
-- `CRITIC_PREMISE_PROBE_REQUIRED` / `CRITIC_ESCALATE` → route to the human gate as
-  above before writing.
+  cold-reader once — a new fresh one. A `CRITIC_REVISE` is technical by the
+  critic's own classifier (a product, threshold or one-way question comes as
+  `CRITIC_ESCALATE`), so a second one is not the owner's either (board 314): resolve
+  it, append an AUTONOMOUS entry to `.engine/overseer/escalations.md` (both
+  objections, both fixes, cost-to-reverse), spawn a third fresh cold-reader, and on
+  its `CRITIC_PASS` write and seal the contract yourself — no question, no card in
+  `tasks/blocked/`. Only a third `CRITIC_REVISE` is a loop that cannot converge:
+  park it (`board.py open-item --to blocked`, the three objections) and emit
+  OVERSEER_SLICE_AWAITING_OWNER.
+- `CRITIC_PREMISE_PROBE_REQUIRED` / `CRITIC_ESCALATE` → route as above before
+  writing: `PRODUCT_DECISION`, a threshold or a one-way door goes to the owner
+  (attended `AskUserQuestion`, unattended a park); any other category is a two-way
+  door — take the critic's recommendation, log it AUTONOMOUS, continue.
 
 ---
 

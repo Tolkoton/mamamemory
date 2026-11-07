@@ -9,6 +9,8 @@
     python3 .claude/hooks/mode.py check-close <task>      the minimum of the mode of a task in done/ (board 098):
                                                          exit 0 it is there; 1 what is missing, a line each;
                                                          3 the check itself broke (never read as «missing»)
+    python3 .claude/hooks/mode.py foreign-mark <task>     the runner, as a task enters doing/: what is uncommitted
+                                                         then is another's work (board 409); prints the count
 
 THREE MODES, a property of the TASK: ескіз (an answer to one question, code only in quarantine),
 соло (one builder, the gates, the overseer), конвеєр (a feature architect, a sealed slice contract
@@ -58,6 +60,12 @@ file changed since the last accepted PASS (gate_allows.unit_files), not for the 
 A file of a commit that a later covered commit of the same task changed needs no PASS of its own (the
 owner's answer, board 754): a fix with a PASS replaced the code a BLOCK was given on, and what is left
 in the branch is audited. The commit that replaced it must itself be covered — else both are missing.
+ANOTHER'S WORK IS NOT THE TASK'S (board 409). What was uncommitted when the task entered doing/ — staged
+or not, the work of earlier sessions — is another's: the runner records it then (`foreign-mark`: each
+working-code path with the content of its index and of its work tree, `.claude/state/board/foreign/`).
+A file a commit of the task changed to exactly such content needs no PASS of this task: it is audited
+with its own work. A file the task changed further is the task's. A clone without the record asks a PASS
+for everything, as before (mamamemory 702: 89 staged files of a feature, committed by an open item).
 
 A mode says which roles run and how strictly; it never says who runs them, and nothing here
 names one (tests/test_model_roles.py). Standard library only. Exit: 0 done; 1 attended
@@ -103,6 +111,7 @@ RECORDS = ("tasks/", ".engine/", "sketches/")   # the records and the sketches' 
 QUARANTINE = ("sketches/", ".engine/", "tasks/")   # all a task in ескіз may change (board 099)
 SKETCH_RECORDS = ".engine/sketches/"
 FEATURES, SLICES, SEALS = ".engine/architecture/feature/", ".engine/slices/", ".claude/state/contracts"
+FOREIGN = ".claude/state/board/foreign"   # what was uncommitted when a task entered doing/ (board 409)
 FRESH_AUDIT = "python3 .claude/hooks/overseer_verdict.py request --turn-file <файл ходу>"   # a PASS of another clone is not carried over (board 776, 1748)
 
 
@@ -390,6 +399,43 @@ def _digest(root: Path, commit: str, rel: str) -> str:
     return hashlib.sha256(blob.stdout).hexdigest()[:16] if blob.returncode == 0 else "absent"
 
 
+def _worktree_digest(root: Path, rel: str) -> str:
+    path = root / rel
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.is_file() and not path.is_symlink() else "absent"
+
+
+def foreign_of(root: Path, stem: str) -> dict[str, list[str]]:
+    """The record `foreign_mark` keeps for the task: path → the contents that were another's; {} without one."""
+    try:
+        data = json.loads((root / FOREIGN / f"{stem}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): [str(d) for d in v] for k, v in data.items() if isinstance(v, list)} if isinstance(data, dict) else {}
+
+
+def foreign_mark(root: Path, stem: str) -> int:
+    """Record what is uncommitted now, as the task enters doing/: every working-code path with the content of its
+    index (when staged) and of its work tree (when changed there), added to what earlier stays recorded."""
+    is_code = working_code(root)
+    status = _git(root, "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames")
+    record = foreign_of(root, stem)
+    count = 0
+    for entry in status.stdout.decode("utf-8", "surrogateescape").split("\0") if status.returncode == 0 else []:
+        staged, changed, rel = entry[:1], entry[1:2], entry[3:]
+        if not rel or not is_code(rel):
+            continue
+        seen = record.setdefault(rel, [])
+        for digest in ([_digest(root, "", rel)] if staged not in (" ", "?") else []) + ([_worktree_digest(root, rel)] if changed != " " else []):
+            if digest not in seen:
+                seen.append(digest)
+        count += 1
+    target = root / FOREIGN / f"{stem}.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.with_suffix(".tmp").write_text(json.dumps(record, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    target.with_suffix(".tmp").replace(target)
+    return count
+
+
 def passed_trees(root: Path, stem: str, commits: list[str]) -> list[dict[str, Any]]:
     """The tree fingerprints of the requests the overseer answered PASS for this task's units — or with no
     task in doing/ (`-`) whose request's HEAD is one of the task's commits: the runner's turn back runs when
@@ -447,8 +493,9 @@ def unaudited(root: Path, stem: str, commits: list[str]) -> list[str]:
     missing: list[str] = []
     replaced: set[str] = set()   # the files a later covered commit of the task changed: what it left is what a PASS saw
     own = set(commits)
+    foreign = foreign_of(root, stem)   # board 409: another's uncommitted work the task committed is not its code
     for commit in reversed(commits):
-        code = [rel for rel in _changed(root, commit) if is_code(rel)]
+        code = [rel for rel in _changed(root, commit) if is_code(rel) and _digest(root, commit, rel) not in foreign.get(rel, ())]
         if not code:
             continue
         left = {rel: _left_by_others(root, commit, rel, own) for rel in code if rel not in replaced}
@@ -460,6 +507,27 @@ def unaudited(root: Path, stem: str, commits: list[str]) -> list[str]:
                        f"{', …' if len(code) > 5 else ''}), а PASS overseer-а, що бачив саме цей код, у журналі вердиктів немає; "
                        f"якщо audit пройшов в іншому клоні (.claude/state/ не в git), попросіть новий: {FRESH_AUDIT}")
     return missing[::-1]
+
+
+def open_task(root: Path) -> str | None:
+    """The task whose stay runs now: the session's task in doing/, else — with nothing in doing/ — the one that
+    left doing/ last (the turn back runs on past the move to done/, as `task_commits` reads it); None without one."""
+    own = own_task(root)
+    if own:
+        return own[0].stem
+    if (root / "tasks" / "doing").is_dir() and any((root / "tasks" / "doing").glob("*.md")):
+        return None   # another's task is in doing/ (the owner's attended one): no stay of this session runs
+    moves = _lines(_git(root, "log", "-1", "--no-renames", "--format=", "--name-status", "--diff-filter=AD", "HEAD", "--", "tasks/doing/"))
+    status, _, rel = (moves[0].partition("\t") if moves else ("", "", ""))
+    return Path(rel).stem if status == "D" and rel.endswith(".md") else None
+
+
+def open_task_unaudited(root: Path) -> list[str]:
+    """What check-close would miss now in the open task's committed working code (board 411): the Stop hook asks
+    for an audit on a claim whenever this is not empty, even with nothing edited since its last request."""
+    stem = open_task(root)
+    commits = task_commits(root, stem) if stem else None
+    return unaudited(root, stem, commits) if stem and commits else []
 
 
 def pipeline_missing(root: Path, commits: list[str]) -> list[str]:
@@ -563,8 +631,12 @@ def main(argv: list[str] | None = None) -> int:
     raising.add_argument("--why", required=True)
     commands.add_parser("unattended")
     commands.add_parser("check-close").add_argument("task", help="NNN-name, or its folder or task.md in tasks/done/")
+    commands.add_parser("foreign-mark").add_argument("task", help="NNN-name of the task entering doing/")
     args = parser.parse_args(argv)
     root = (args.root or project_root()).resolve()
+    if args.command == "foreign-mark":
+        print(foreign_mark(root, Path(args.task).name.removesuffix(".md")))
+        return EXIT_OK
     if args.command == "check-close":
         try:
             return cmd_check_close(root, args.task)

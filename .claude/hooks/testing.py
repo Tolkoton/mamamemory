@@ -848,6 +848,19 @@ def request_dir(root: Path, request_id: str) -> Path:
     return root / REQUESTS_REL / request_id
 
 
+def note_written(root: Path, rel: str) -> None:
+    """A test file the tester in flight writes, in its request's `written.json`: until the hand-in the
+    Stop gate does not count its RED against the builder (gate.tester_in_flight, board 315)."""
+    waiting = pending(root)
+    if waiting is None or waiting.get("agent") != TESTER:
+        return
+    path = request_dir(root, str(waiting["id"])) / "written.json"
+    files = read_json(path).get("files")
+    files = files if isinstance(files, list) else []
+    if rel not in files:
+        write_json(path, {"files": [*files, rel]})
+
+
 def launch_line(request_id: str) -> str:
     return f"{REQUEST_WORD} {request_id}"
 
@@ -883,8 +896,9 @@ def opened_slice(root: Path, task: str) -> str | None:
 
 
 def sealed_by_task(root: Path, task: str) -> str | None:
-    """The one sealed contract the board task wrote itself — added or changed since the commit that brought
-    tasks/doing/<task>.md in, committed or not — when no slice was ever opened under it (board 1753): the
+    """The one sealed contract the board task wrote itself — added or changed during a stay of
+    tasks/doing/<task>.md (every stay: a task back from blocked/ keeps what it sealed before, proposal 1780),
+    committed or not — when no slice was ever opened under it (board 1753): the
     builder who skipped point (a) still meets the testing gate. None with two such contracts (planned ahead,
     no choice), with a slice opened under the task, with no task or no git; a contract from before the task is never its."""
     if not task or any(r.get("task") == task for r in rows(root, kind="opened")):
@@ -894,11 +908,19 @@ def sealed_by_task(root: Path, task: str) -> str | None:
         done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
         return done.stdout.split("\n") if done.returncode == 0 else []
 
-    came = [c for c in git("log", "-1", "--format=%H", "--diff-filter=A", "--no-renames", "--", f"tasks/doing/{task}.md") if c]
-    if not came:
+    stays: list[list[str]] = []   # [the commit that brought the task into doing/, the one that took it out], oldest first
+    for line in git("log", "--reverse", "--format=%H %x01", "--name-status", "--no-renames", "--", f"tasks/doing/{task}.md"):
+        if "\x01" in line:
+            sha = line.split()[0]
+        elif line[:1] == "A":
+            stays.append([sha])
+        elif line[:1] == "D" and stays and len(stays[-1]) == 1:
+            stays[-1].append(sha)
+    if not stays or len(stays[-1]) != 1:
         return None
-    written = git("diff", "--name-only", "--no-renames", came[0], "--", ".engine/slices/") + git(
-        "ls-files", "--others", "--exclude-standard", "--", ".engine/slices/")
+    written = git("ls-files", "--others", "--exclude-standard", "--", ".engine/slices/")
+    for stay in stays:   # every stay is the task's (proposal 1780); what other tasks did while it was parked is not
+        written += git("diff", "--name-only", "--no-renames", *stay, "--", ".engine/slices/")
     slugs = sorted({Path(rel).stem for rel in written if re.fullmatch(r"\.engine/slices/[\w.-]+\.md", rel) and not rel.endswith(".behaviors.md")})
     mine = [s for s in slugs if contract_path(root, s).is_file() and contract_sealed(root, s) and not is_parked(root, s)]
     return mine[0] if len(mine) == 1 else None
@@ -1061,6 +1083,8 @@ def guard(root: Path, envelope: JsonObj) -> JsonObj | None:
         rel = real.relative_to(root).as_posix() if target and real.is_relative_to(root) else target
         if tool in EDIT_TOOLS and not test_touch.is_test_path(rel):
             return deny(f"The tester writes test files only: {rel} is not one. It does not write the implementation and does not edit the contract.")
+        if tool in EDIT_TOOLS and rel:
+            note_written(root, rel)
         return None
     if tool not in AGENT_TOOLS or tool_input.get("subagent_type") not in AGENTS:
         return None
@@ -1452,16 +1476,22 @@ def review_numbers(root: Path, slugs: set[str]) -> str:
 
 
 def review_task(root: Path) -> None:
-    """After ten slices with a decision of the manager: a review task on the board — once."""
+    """After ten slices with a decision of the manager: a review task on the board — and again after
+    every ten more that no earlier review counted (the owner's answer 1А to board 504)."""
     done = {str(r.get("slice")) for r in rows(root, kind="decision") if r.get("point") == "b"}
-    if len(done) < REVIEW_AFTER or rows(root, kind="review_task"):
+    reviews = rows(root, kind="review_task")
+    counted = {str(s) for r in reviews for s in r.get("slices", [])}
+    if len(done - counted) < REVIEW_AFTER:
         return
+    earlier = (f"Попередній розбір — рядок review_task журналу від {reviews[-1].get('utc', '?')} ({len(counted)} slice-ів); з того часу нових — "
+               f"{len(done - counted)}. Зразок і числа попереднього розбору — tasks/done/504-testing-review-thinkhow/report.md у репозиторії двигуна; "
+               "порівняй із ним і скажи, що змінилось. ") if reviews else ""
     board = root / ".claude" / "unattended" / "board.py"
     if board.is_file() and (root / "tasks").is_dir():
         subprocess.run(
             [sys.executable, str(board), "open-item", "--to", "proposed", "--key", "testing-review", "--source", "hook testing.py",
-             "--title", "розбір тестування після десяти slice-ів",
-             "--what", f"У журналі тестування .engine/testing/ledger.md набралося {len(done)} slice-ів із рішенням test manager-а. " + review_numbers(root, done),
+             "--title", "розбір тестування після ще десяти slice-ів" if reviews else "розбір тестування після десяти slice-ів",
+             "--what", f"У журналі тестування .engine/testing/ledger.md набралося {len(done)} slice-ів із рішенням test manager-а. " + earlier + review_numbers(root, done),
              "--do", ("Розбір, а не вирок: що впіймали незалежні тести, чого не впіймано понад overseer-а, де test manager помилився (скільки разів "
                       "«не перемикатися» довелося наздоганяти). Результат — пропозиції змін до визначень test-manager і slice-tester; затверджує власник. "
                       "Окремо порахуй і покажи у звіті, що показали живі slices про invariants: скільки помилок знайдено на входах, яких не було "
@@ -1472,7 +1502,7 @@ def review_task(root: Path) -> None:
                       "property-based testing?» (spike 063: приклади з розділом «Invariants» ловили стільки ж, скільки бібліотека; повний проєкт — "
                       "tasks/done/048-property-tests-design/report.md, розділ 9).")],
             cwd=root, capture_output=True, text=True, check=False)
-    append_row(root, {"type": "review_task", "slices": sorted(done)}, "review after ten slices", [f"{len(done)} slices have a decision; the review task is on the board"])
+    append_row(root, {"type": "review_task", "slices": sorted(done)}, "review after ten slices", [f"{len(done)} slices have a decision, {len(done - counted)} of them new since the last review; the review task is on the board"])
 
 
 def decision_lines(decision: JsonObj, facts: JsonObj, fired: dict[str, str]) -> list[str]:

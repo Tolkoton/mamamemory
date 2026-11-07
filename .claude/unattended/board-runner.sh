@@ -29,7 +29,9 @@
 #                       (--resume); a usage-limit notice waits 15 minutes and is not an attempt
 #   the task is closed  when the agent moved it to done/ or blocked/. Then: the working tree is
 #                       checked (see below), push, next task
-#   a task is stuck     three attempts in a row without a new commit; the task's budget spent;
+#   a task is stuck     three attempts in a row without a new commit (one that ended in an API or
+#                       session error within a minute is not an attempt, up to three in a row:
+#                       board_state.py, A FAILED SESSION, board 411); the task's budget spent;
 #                       three overseer BLOCKs in a row on one of its units: the runner PARKS the
 #                       task and takes the next one (see below) — one task never stops the board.
 #                       Time alone parks nothing: a task that keeps committing runs as long as it
@@ -172,6 +174,8 @@
 #   BOARD_BRANCH (unattended/work)  BOARD_REMOTE (origin)  BOARD_INBOX (~/engine-ops/tasks-inbox)
 #   BOARD_CLAUDE (claude)  BOARD_LIMIT_WAIT_SEC (900)  BOARD_STALL_ATTEMPTS (3)
 #   BOARD_PAUSE_SEC (30, between attempts)
+#   BOARD_MINIMUM_TURNS (3): turns back for the minimum, while each one before ran hollow (board 410)
+#   BOARD_HOLLOW_SEC (60): a turn back shorter than this did no work
 #   BOARD_MAX_USD (empty = no cap): the most one task may cost; passed on as --max-budget-usd
 
 set -uo pipefail
@@ -200,6 +204,8 @@ LIMIT_WAIT="${BOARD_LIMIT_WAIT_SEC:-900}"
 STALL_ATTEMPTS="${BOARD_STALL_ATTEMPTS:-3}"
 PAUSE="${BOARD_PAUSE_SEC:-30}"
 MAX_USD="${BOARD_MAX_USD:-}"
+MINIMUM_TURNS="${BOARD_MINIMUM_TURNS:-3}"
+HOLLOW_SEC="${BOARD_HOLLOW_SEC:-60}"
 
 STATE="$PROJECT_ROOT/.claude/state/board"
 MODE_FILE="$PROJECT_ROOT/.claude/state/overseer/mode"
@@ -583,6 +589,19 @@ reviewed_guard() {
   REVIEWED_GUARDING=0
 }
 
+# operator_requests: in the engine's own repository only — after a release, one request to the owner's operator
+# per listed project still on an older version (engine.py update-requests, board 409). Never stops the board.
+operator_requests() {
+  [ -f "$PROJECT_ROOT/engine.py" ] || return 0
+  local out
+  if ! out=$(python3 "$PROJECT_ROOT/engine.py" update-requests 2>&1); then
+    event "update-requests-failed $(head -1 <<< "$out")"
+    return 0
+  fi
+  if grep -q '^  asked ' <<< "$out"; then event "update-requests $(grep -c '^  asked ' <<< "$out")"; fi
+  return 0
+}
+
 # New task files and the owner's answers, each in a commit of its own.
 intake() {
   local taken answered placed
@@ -601,6 +620,12 @@ intake() {
   if [ -n "$answered" ]; then
     board_commit "board: answered, back to todo — $(echo "$answered" | tr '\n' ' ')" \
       || finish error - commit "cannot commit the answered tasks"
+  fi
+  # board 409: unblock parks a task back in blocked/ with the questions it last went with, printing nothing;
+  # the owner reads the branch, so the park is committed here, before anything can stop the round.
+  if [ -n "$(git status --porcelain -- tasks/blocked 2>/dev/null)" ]; then
+    board_commit "board: back in blocked/ with the same questions and answers — parked where it lies, no session started" \
+      || finish error - commit "cannot commit the parked loop"
   fi
   placed=$(board maintain-task) || finish error - maintain "board.py maintain-task failed"
   if [ -n "$placed" ]; then
@@ -727,7 +752,7 @@ trust_check() {
 }
 
 # attempt <stem> <prompt of a fresh conversation> <prompt of a continued one>: one claude session
-# for the task, booked in costs.json. Sets NOTE to `limit`, `auth` or nothing (board_state.py)
+# for the task, booked in costs.json. Sets NOTE to `limit`, `auth`, `failed` or nothing (board_state.py)
 # and OUT to the file that holds the session's output.
 attempt() {
   local stem="$1" session n before after
@@ -816,11 +841,21 @@ Commit what belongs to this task (through .claude/unattended/commit_checkpoint.s
 # (board 098: `mode.py check-close`, by files — report.md; in соло a PASS of the overseer on every
 # commit with working code; without working code the reader's PASS on the report, board 100; in конвеєр
 # also the feature artifact and sealed slice contracts). If it is
-# not (exit 1), the agent gets the turn back once with what is missing; still missing afterwards — the
-# task goes to blocked/ with the reason `minimum`. Any other exit (3: the check broke) is an anomaly
-# and the task stays in done/ — never a park, never a stop.
+# not (exit 1), the agent gets the turn back with what is missing; still missing after a turn that did
+# its work — the task goes to blocked/ with the reason `minimum`. Any other exit (3: the check broke) is
+# an anomaly and the task stays in done/ — never a park, never a stop.
+#
+# A TURN BACK THAT NEVER RAN IS NOT AN ANSWER (board 410). Task 315 was parked after a turn back of 14
+# seconds: the resumed conversation claimed the unit again, the Stop hook saw no code changed since its
+# last request and asked for no audit, and the session ended. So: when all that is missing is the
+# overseer's PASS on committed code, the runner writes the audit request itself (`overseer_verdict.py
+# request`, the task's report as the turn) and gives it to a fresh session that does that audit and
+# nothing else. A turn back that ran hollow — the request still has no verdict, or the session ended in
+# an error, after one turn or in under BOARD_HOLLOW_SEC (board_state.py hollow) — is given again, in a
+# fresh session, up to BOARD_MINIMUM_TURNS turns in all. A turn that did run and still left the minimum
+# missing (three BLOCKs, a question only the owner can answer) parks the task, as before.
 check_minimum() {
-  local stem="$1" missing rc
+  local stem="$1" missing rc turns=0
   [ "$OUTCOME" = done ] || return 0
   missing=$(python3 "$HERE/../hooks/mode.py" --root "$PROJECT_ROOT" check-close "$stem" 2>/dev/null); rc=$?
   [ "$rc" -eq 0 ] && return 0
@@ -829,29 +864,86 @@ check_minimum() {
     return 0
   fi
   event "minimum-missing $stem"
-  say "$stem: closed without the minimum of its mode; the agent is asked once to make it"
-  local ask="The task $stem is in tasks/done/, but the minimum of its mode is not there (python3 .claude/hooks/mode.py check-close $stem):
-$missing
-Make what is missing — for a commit of working code with no PASS, get the overseer's audit of that code (claim the unit, as tasks/README.md and the engine rules say); for a task that changed no working code, the reader's PASS on its report (python3 .claude/hooks/reader.py request $stem --report, then the agent reader with the line it prints; after a BLOCK fix the documents and ask again); for конвеєр, the feature artifact and the seal of every slice contract — and commit it (through .claude/unattended/commit_checkpoint.sh, on this branch). Keep the task in tasks/done/; if it cannot be made without the owner, move the task to tasks/blocked/ with your question instead. Do not push. You are asked this once; if the minimum is still missing afterwards, the task goes to blocked/."
+  say "$stem: closed without the minimum of its mode; the agent is asked to make it"
   while :; do
-    if [ -n "$MAX_USD" ] && [ "$(memo get "$stem" left "$MAX_USD")" = "0.00" ]; then break; fi
+    turns=$((turns + 1))
+    minimum_turn "$stem" "$missing" "$turns"
+    board_commit "board: $stem — what the minimum turn left uncommitted under tasks/" \
+      || finish error "$stem" commit "cannot commit the leftover changes under tasks/"
+    OUTCOME=$(board where "$stem")
+    [ "$OUTCOME" = done ] || return 0
+    missing=$(python3 "$HERE/../hooks/mode.py" --root "$PROJECT_ROOT" check-close "$stem" 2>/dev/null); rc=$?
+    [ "$rc" -eq 0 ] && { event "minimum-made $stem"; return 0; }
+    if [ "$rc" -ne 1 ]; then
+      note_anomaly "$stem" "мінімум режиму задачі не перевірено після ходу назад: \`mode.py check-close\` відповів кодом $rc" "задачу лишено в \`done/\`; runner узяв наступну"
+      return 0
+    fi
+    [ -n "$HOLLOW" ] && [ "$turns" -lt "$MINIMUM_TURNS" ] || break
+    event "minimum-turn-hollow $stem $turns $HOLLOW"
+    say "$stem: the turn back did no work ($HOLLOW); it is given again in a fresh session ($((turns + 1)) of $MINIMUM_TURNS)"
+  done
+  park_task "$stem" minimum "$(sed -n '2,$p' <<< "$missing" | sed 's/^- //' | paste -sd ';' - | sed 's/;/; /g')"
+}
+
+# audit_only <check-close output>: every missing line is a commit of working code no PASS saw.
+audit_only() { sed -n '2,$p' <<< "$1" | grep -qv "PASS overseer-а, що бачив саме цей код" && return 1; [ -n "$(sed -n '2p' <<< "$1")" ]; }
+
+# audit_request <stem> <check-close output>: the runner's own audit request on the task's committed
+# code (overseer_verdict.py request); prints its `OVERSEER_REQUEST <id>` line — the one already waiting,
+# if the script names one — or nothing when no request could be made.
+audit_request() {
+  local stem="$1" turn="$STATE/minimum-audit-$1.md" said
+  { printf '# Task %s is closed; the overseer has not passed its committed code
+
+' "$stem"
+    printf 'The board runner asks for this audit (board 410): check-close says
+
+%s
+
+' "$2"
+    printf '## The task'"'"'s report (tasks/done/%s/report.md) — the claims to check
+
+' "$stem"
+    cat "$PROJECT_ROOT/tasks/done/$stem/report.md" 2>/dev/null || echo "(no report.md)"
+  } > "$turn"
+  said=$(cd "$PROJECT_ROOT" && CLAUDE_PROJECT_DIR="$PROJECT_ROOT" python3 "$HERE/../hooks/overseer_verdict.py" request --turn-file "$turn" 2>&1)
+  grep -o 'OVERSEER_REQUEST [^[:space:]]*' <<< "$said" | tail -n 1
+}
+
+# minimum_turn <stem> <check-close output> <turn number>: one turn back for the minimum. Sets HOLLOW to
+# why it did no work, or to nothing.
+minimum_turn() {
+  local stem="$1" missing="$2" request="" ask id
+  HOLLOW=""
+  ! audit_only "$missing" || request=$(audit_request "$stem" "$missing")
+  if [ -n "$request" ]; then
+    event "minimum-audit $stem ${request#OVERSEER_REQUEST }"
+    ask="The task $stem is in tasks/done/, and all that its minimum lacks is the overseer's PASS on its committed code (python3 .claude/hooks/mode.py check-close $stem):
+$missing
+This session is for that audit and nothing else. The board runner has written the request. Launch the agent overseer now with exactly this prompt and nothing else:
+$request
+Change nothing until it answers. On PASS: end the turn. On BLOCK: fix what it names, run the verification, commit through .claude/unattended/commit_checkpoint.sh on this branch, write what you changed and the commands you ran with their output into .engine/artifacts/overseer/turn-$stem-fix<N>.md, ask for the next audit yourself — python3 .claude/hooks/overseer_verdict.py request --turn-file .engine/artifacts/overseer/turn-$stem-fix<N>.md (the Stop hook asks for none here: this request is not its own) — and launch the agent overseer with exactly the line it prints, so that another overseer judges the fix. After three BLOCKs in a row, end the turn: the runner parks the task. Keep the task in tasks/done/, start no other work, do not push."
+    memo forget "$stem"
+  else
+    ask="The task $stem is in tasks/done/, but the minimum of its mode is not there (python3 .claude/hooks/mode.py check-close $stem):
+$missing
+Make what is missing — for a commit of working code with no PASS, get the overseer's audit of that code (claim the unit, as tasks/README.md and the engine rules say); for a task that changed no working code, the reader's PASS on its report (python3 .claude/hooks/reader.py request $stem --report, then the agent reader with the line it prints; after a BLOCK fix the documents and ask again); for конвеєр, the feature artifact and the seal of every slice contract — and commit it (through .claude/unattended/commit_checkpoint.sh, on this branch). Keep the task in tasks/done/; if it cannot be made without the owner, move the task to tasks/blocked/ with your question instead. Do not push. If the minimum is still missing after this turn, the task goes to blocked/."
+    [ "$3" -eq 1 ] || memo forget "$stem"   # after a hollow turn, not the conversation that produced it
+  fi
+  while :; do
+    if [ -n "$MAX_USD" ] && [ "$(memo get "$stem" left "$MAX_USD")" = "0.00" ]; then return 0; fi
     attempt "$stem" "$ask" "$ask"
     [ "$NOTE" = "limit" ] || break
     status waiting-limit "$stem"
     say "usage limit; waiting $LIMIT_WAIT s"
     sleep "$LIMIT_WAIT"
   done
-  board_commit "board: $stem — what the minimum turn left uncommitted under tasks/" \
-    || finish error "$stem" commit "cannot commit the leftover changes under tasks/"
-  OUTCOME=$(board where "$stem")
-  [ "$OUTCOME" = done ] || return 0
-  missing=$(python3 "$HERE/../hooks/mode.py" --root "$PROJECT_ROOT" check-close "$stem" 2>/dev/null); rc=$?
-  [ "$rc" -eq 0 ] && { event "minimum-made $stem"; return 0; }
-  if [ "$rc" -ne 1 ]; then
-    note_anomaly "$stem" "мінімум режиму задачі не перевірено після ходу назад: \`mode.py check-close\` відповів кодом $rc" "задачу лишено в \`done/\`; runner узяв наступну"
-    return 0
+  id=${request#OVERSEER_REQUEST }
+  if [ -n "$request" ] && ! grep -qF "\"request\": \"$id\"" "$PROJECT_ROOT/.claude/state/overseer/verdicts.jsonl" 2>/dev/null; then
+    HOLLOW="no-verdict"
+  else
+    HOLLOW=$(memo hollow "$OUT" "$HOLLOW_SEC")
   fi
-  park_task "$stem" minimum "$(sed -n '2,$p' <<< "$missing" | sed 's/^- //' | paste -sd ';' - | sed 's/;/; /g')"
 }
 
 # run_task <tasks/doing/NAME.md>: attempts until the task left doing/ — moved by the agent to
@@ -948,6 +1040,7 @@ while :; do
   # What the pull brought is the owner's — recorded before anything pushes again (a gate's question in intake).
   board reviewed-accept --accepted "$REVIEWED_ACCEPTED" || finish error - reviewed "board.py reviewed-accept failed"
   intake
+  operator_requests
   TASK=$(board next); RC=$?
   case "$RC" in
     0) ;;
@@ -982,6 +1075,8 @@ while :; do
       TASK=$(board start "$TASK") || finish error "$TASK_NAME" start "board.py start refused"
       board_commit "board: $TASK_NAME → doing" || finish error "$TASK_NAME" commit "cannot commit the move to doing/"
       dirty_paths > "$DIRTY_BEFORE"
+      # board 409: what is uncommitted now is another's work; check-close asks this task no PASS for it
+      python3 "$HERE/../hooks/mode.py" --root "$PROJECT_ROOT" foreign-mark "$TASK_NAME" > /dev/null || event "foreign-mark-failed $TASK_NAME"
       rm -f "$(blocks_marker "$TASK_NAME")" "$(reader_marker "$TASK_NAME")"   # a fresh start: a marker from before the owner's answer is stale
       memo retry "$TASK_NAME"
       ;;

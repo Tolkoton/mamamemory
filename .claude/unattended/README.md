@@ -102,7 +102,7 @@ A session that ends with the task still open is continued (`--resume`); a usage-
 waits 15 minutes. When the agent has moved the task to `done/` or `blocked/` the runner pushes
 the branch and takes the next one.
 
-One task never stops the board. After three attempts in a row without a commit, when the task's budget (`BOARD_MAX_USD`) is spent, or when three overseers in a
+One task never stops the board. After three attempts in a row without a commit (an attempt that ended in an API or session error within a minute is not one — up to three of them in a row, board 411), when the task's budget (`BOARD_MAX_USD`) is spent, or when three overseers in a
 row answered BLOCK on one of its units (the Stop hook then leaves a marker with the verdicts and
 stops the session; the agent is asked nothing), the runner parks the
 task itself (`board.py park`): it goes to `tasks/blocked/` with a section `## Чому зупинилась` and
@@ -148,7 +148,12 @@ wrote; in ескіз the record `.engine/sketches/<name>.md` with a reader's PAS
 code, a reader's PASS on its `report.md` as it is, read together with every document the task's commits changed,
 each as it is now (board 100: `reader.py request <task> --report`; the board's own moves and the journals scripts
 write are not documents). Missing — the agent gets the turn
-back once with the list; still missing — the task goes to `blocked/` with the reason `minimum`, its
+back with the list; when all that is missing is the overseer's PASS on committed code, the runner writes the
+audit request itself (`overseer_verdict.py request`, the task's report as the turn) and the turn back is a fresh
+session for that audit only (board 410). A turn back that ran hollow — its request still has no verdict, or the
+session ended in an error, after one turn or in under `BOARD_HOLLOW_SEC` (60) seconds — is given again in a fresh
+session, up to `BOARD_MINIMUM_TURNS` (3) turns in all. Still missing after a turn that ran (three BLOCKs, say) —
+the task goes to `blocked/` with the reason `minimum`, its
 report beside it as `blocked/report-<task>.md`, and a journal entry. A task closed into `blocked/`,
 and one the runner closes itself (a gate's escalation, an owner action), is not checked; a check that
 breaks (exit 3, or any code but 0 and 1) is a journal entry and the task stays in `done/` — never a

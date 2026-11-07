@@ -31,6 +31,14 @@ not say:
   `run_in_background: false`. A hook refuses any prompt but the request line:
   the auditor reads the request package (your final message, the commands that
   really ran, the contract), not your explanation.
+- A claim the hook does not take is answered, never ignored (board 411): `UNIT CLAIM NOT
+  TAKEN` names why — no working code to audit (a change only outside the code paths of
+  `.claude/project.env`, or code a PASS already saw), a BLOCK on the very same code, or no
+  verification command. There is then no audit to wait for: do what it says and go on.
+- The commit never waits for the audit. A verified result is committed (unattended, through
+  `.claude/unattended/commit_checkpoint.sh`) whether or not an audit follows; what counts
+  at the close is `mode.py check-close`, and the hook asks for an audit on a claim whenever
+  the task's committed code has no PASS that saw it — the same rule.
 - No valid verdict (the agent was not launched, its answer did not fit the
   schema, the tree changed during the audit; a check rewriting its output under
   `.engine/artifacts/` is not a change) — the request is repeated, twice
@@ -64,7 +72,9 @@ On its own line, the Stop hook lets the turn end:
 
 - `OVERSEER_SLICE_AWAITING_OWNER: <reason>` — the slice's remaining work is
   owner-driven (parked smoke, walkthrough, formal report) **and** no other
-  slice is unblocked. If another slice can start, start it.
+  slice is unblocked. If another slice can start, start it — the Stop hook
+  refuses this marker and `OVERSEER_SLICE_COMPLETE` while the feature DAG has a
+  slice that can start (`python3 .claude/hooks/slice_queue.py` lists them; board 314).
 - `OVERSEER_SLICE_COMPLETE: <slug>` — the slice is closed: exit criterion met,
   smoke recorded, `.engine/PROGRESS.md` updated. Move to the next slice in the
   DAG; halt only if there is none.

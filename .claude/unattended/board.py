@@ -28,7 +28,9 @@ exception reads only: `review` takes the board from the work branch in origin (b
     board.py where <NNN-name>        todo | doing | blocked | proposed | done | missing
     board.py import-inbox <dir>      take new task files in (see `import_inbox`); a file with the number
                                      of a proposal puts it to work (A PROPOSAL)
-    board.py unblock                 blocked/ tasks whose every answer is filled go back to todo/
+    board.py unblock                 blocked/ tasks whose every answer is filled go back to todo/ — an empty
+                                     `Відповідь:` under another heading is open too; a task back with the
+                                     questions it last went with is parked instead (board 409)
     board.py reviewed-reject --accepted <file> [--known <rev>]
                                      the runner's call before a pull and before a push: numbers in
                                      tasks/.reviewed that did not arrive from the owner are removed
@@ -202,7 +204,8 @@ so the rule has one place. The file is committed with tasks/ like the move itsel
 
 A PARKED TASK (board 021). One task never stops the board: when the runner gives up on a task —
 attempts in a row without a commit, a task open too long, its budget spent, a task the agent put
-back into todo/, three overseer BLOCKs in a row on one unit (board 031: the Stop hook leaves a
+back into todo/, a task back in blocked/ with the very questions and answers it last went to todo/ with (board 409:
+a loop, parked where it lies, with no session started for it), three overseer BLOCKs in a row on one unit (board 031: the Stop hook leaves a
 marker, `--verdicts` writes its verdicts into the task) — `park` moves it to blocked/ itself, with a section `## Чому зупинилась` (one
 dated line per stop, placed before the questions) and a question to the owner with an empty
 `Відповідь:`; any answer returns it to todo/ like every answered task. The same call writes the
@@ -260,7 +263,9 @@ agent session writes. What the operator puts there is the owner's word, like a f
 An answer an agent wrote down from the owner's words in a conversation carries «записано Claude зі
 слів власника <date>, <where>: «<the words>»» (`recorded`); without the date, the place or the quote it
 is no answer — `import-inbox` leaves the copy in the inbox, `unblock` leaves the task in blocked/, and
-the journal says why once. Consent through such a record is «так» in the answer and in the quote alike.
+the journal says why once. To an owner's action (`Дія runner-а:`) consent through such a record is «так» in
+the answer and in the quote alike. To an ordinary question any checkable record is an answer, and the agent
+takes it for consent when the quote approves exactly that action, «так» or not (board 409, unattended.md).
 
 A MODE (board 097) is the task's: `Режим: ескіз|соло|конвеєр` under its title, соло without the
 line. The mode itself is read by .claude/hooks/mode.py — the one reader of the mode and of «nobody
@@ -330,6 +335,8 @@ QUESTIONS = re.compile(r"^##\s+Питання до власника\s*$", re.MUL
 HEADING = re.compile(r"^##\s", re.MULTILINE)
 ANSWER = re.compile(r"^[\s>*_-]*Відповідь:[*_]*[ \t]*(.*)$", re.MULTILINE)
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```[ \t]*$", re.MULTILINE | re.DOTALL)  # a code block quotes; it asks nothing
+LOOPS = ".claude/state/board/unblocked.json"  # name → the questions a task last went back to todo/ with (board 409)
 # AN ANSWER RECORDED FROM THE OWNER'S WORDS (board 405): an agent wrote it, the owner or the owner's operator
 # put it in; it holds only with the date, where the owner said it, and the words verbatim in «».
 RECORDED = re.compile(r"записано\s+\S+\s+зі\s+слів\s+власника(?P<rest>.*)$", re.IGNORECASE)
@@ -375,13 +382,15 @@ class Task:
     extra: bool = False  # «Додаткові сесії: так»: after the ordinary tasks, under the weekly sum
     klass: int | None = None  # the `Клас:` line (board 401); read only to number an inbox file that has no number
     class_error: str = ""  # why the `Клас:` line names no class; "" when it does or is absent
+    stray: int = 0  # empty `Відповідь:` lines outside `## Питання до власника` (board 409)
 
     @property
     def answered(self) -> bool:
         """Every question has its answer — and there is at least one: a task that asks nothing
         was answered by nobody. An answer recorded from the owner's words that cannot be checked
-        (board 405: no date, place or quote) is no answer."""
-        return bool(self.answers) and all(a and recorded(a)[2] for a in self.answers)
+        (board 405: no date, place or quote) is no answer. A question asked under another heading
+        with an empty `Відповідь:` is still open (board 409: mamamemory 702 went back to todo/ three times)."""
+        return bool(self.answers) and not self.stray and all(a and recorded(a)[2] for a in self.answers)
 
     @property
     def unverified(self) -> bool:
@@ -447,11 +456,12 @@ def parse(text: str) -> Task:
     gate = GATE.search(header)
     extra = EXTRA.search(header)
     section = QUESTIONS.search(text)
-    questions = ""
+    questions, outside = "", text
     if section:
         rest = text[section.end():]
         following = HEADING.search(rest)
         questions = rest[: following.start()] if following else rest
+        outside = text[: section.start()] + (rest[following.start():] if following else "")
     rule = RULE.search(header)
     klass, class_error = _class_line(header)
     offers = [m for m in ACTION.finditer(questions) if m.group(1) in OFFERS and bool(m.group(2)) == (m.group(1) == RESEAL_ACTION)]
@@ -468,6 +478,7 @@ def parse(text: str) -> Task:
         mode_error=mode_reader.parse(text).error,
         extra=extra is not None and extra.group(1).strip(".,;*_").lower() == "так",
         klass=klass, class_error=class_error,
+        stray=sum(1 for a in ANSWER.findall(FENCE.sub("", outside)) if not a.strip()),
     )
 
 
@@ -965,8 +976,20 @@ def errors(board: Board) -> list[str]:
     return [*duplicates(board), *(f"ПОМИЛКА: tasks/{task_classes.CLASSES_FILE}: {sentence}" for sentence in table)]
 
 
+def _loops(board: Board) -> dict[str, str]:
+    try:
+        data = json.loads((board.tasks.parent / LOOPS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
 def unblock(board: Board) -> list[str]:
+    """Answered tasks of blocked/ go back to todo/. One that comes back to blocked/ with the very questions and
+    answers it last went with asks the owner nothing new: it is parked where it is (reason `loop`, board 409),
+    and no session is started for it — the owner's answer to the park's question returns it."""
     moved: list[str] = []
+    loops = _loops(board)
     for path in board.files("blocked"):
         task = read(path)
         # A gate question answered «так» is closed by the runner, not handed to an agent;
@@ -974,12 +997,20 @@ def unblock(board: Board) -> list[str]:
         if task.unverified:
             _unverified(board, path.name, "файл лишився в `blocked/`")
         if task.answered and not task.closes and not task.decided:
+            asked = hashlib.sha256(task.questions.encode("utf-8")).hexdigest()
+            if loops.get(path.name) == asked:
+                park(board, path.stem, "loop", "", "")
+                continue
             target = board.tasks / "todo" / path.name
             target.parent.mkdir(parents=True, exist_ok=True)
             path.rename(target)
             moved.append(path.name)
+            loops[path.name] = asked
     if moved:
         board.set_first([*board.first(), *moved])
+        state = board.tasks.parent / LOOPS
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(json.dumps(loops, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     return moved
 
 
@@ -1578,6 +1609,10 @@ PARK_REASONS = {
                   "повернув файл до стану перед сесією; відкинуту зміну збережено латкою в `.claude/state/gate/protected/discarded/` "
                   "(на сервері runner-а), подія — в журналі аномалій. Що робити далі? Будь-яка відповідь поверне задачу в чергу; "
                   "вказівку агентові напишіть тут же. Якщо зміна потрібна — це пропозиція (`docs/tasks/settings.json`) і ваше «так».")),
+    "loop": ("задача вдруге повернулась у `blocked/` з тими самими питаннями й відповідями, з якими runner уже повертав її в `todo/`",
+             ("Задача повернулась у `blocked/` з тим самим набором питань і відповідей, що й минулого разу: нової сесії для неї "
+             "runner не запускав, щоб не крутити петлю. Що робити далі? Будь-яка відповідь поверне задачу в чергу; вказівку агентові "
+             "напишіть тут же. Якщо вище є питання без відповіді поза розділом «Питання до власника», відповідь на нього — теж тут.")),
     "minimum": ("задачу закрито без мінімуму її режиму, і після одного ходу назад його так і не було ({n})",
                 ("Задачу закрито без мінімуму її режиму (board 098: `mode.py check-close`), і хід назад агентові цього не виправив. "
                 "Що робити далі? Будь-яка відповідь поверне задачу в чергу; вказівку агентові напишіть тут же.")),
@@ -1644,7 +1679,8 @@ def park(board: Board, stem: str, reason: str, detail: str, stash: str, verdicts
     from done/<stem>/: task.md goes to blocked/, its report beside it as blocked/report-<stem>.md.
     So does a report written into done/<stem>/ ahead of the move, for its reader (board 100)."""
     stem = stem.removesuffix(".md")
-    source = next((p for c in ("doing", "todo") for p in [board.tasks / c / f"{stem}.md"] if p.is_file()), None)
+    columns = ("doing", "todo", "blocked") if reason == "loop" else ("doing", "todo")   # a loop is parked where it lies (board 409)
+    source = next((p for c in columns for p in [board.tasks / c / f"{stem}.md"] if p.is_file()), None)
     closed = board.tasks / "done" / stem
     if source is None and reason == "minimum" and (closed / "task.md").is_file():
         source = closed / "task.md"
@@ -1669,7 +1705,8 @@ def park(board: Board, stem: str, reason: str, detail: str, stash: str, verdicts
     target = board.tasks / "blocked" / f"{stem}.md"   # from done/<stem>/ the file is task.md
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(head + tail, encoding="utf-8")
-    source.unlink()
+    if source != target:
+        source.unlink()
     report = closed / "report.md"   # of a task closed without its minimum, or written ahead of the move for its reader (board 100)
     if report.is_file():
         report.replace(board.tasks / "blocked" / f"report-{stem}.md")

@@ -78,7 +78,11 @@ and say where it lies. An answer you record from the owner's words in a conversa
 owner or the operator puts it in, and only when it can be checked, in the `Відповідь:` line itself:
 `<answer> — записано Claude зі слів власника <YYYY-MM-DD>, <session or channel>: «<the words verbatim>»`.
 Without the date, the place or the quote the board takes it for no answer (`board.py`, `recorded`) and
-asks again; consent through a record is «так» in the answer and in the quote. The operator carries the
+asks again. Such a record is the owner's consent when the verbatim quote approves exactly this action,
+unambiguously — the date, the place and the words show it; the word «так» need not be among them (board
+409: «щоб після кожного… виклали», said on 11-04, approves the automatic deploy, and the owner is not asked
+again). A paraphrase, or words about another action, are not consent. Under a `Дія runner-а:` line
+consent stays the one word «так», in the answer and in the quote. The operator carries the
 owner's word and decides nothing: a one-way door, an Article 5 decision, a seal or a ratification still
 needs the owner's own words. You never write the inbox or `~/engine-ops/` — the hooks refuse it.
 

@@ -93,6 +93,11 @@ workflows are compared with the snapshot taken when the turn began. A file that 
 back by the gate itself, the discarded change kept as a patch, the anomaly journal written, and
 the turn blocked once so that the agent reads it. See protected_guard.py.
 
+THE TESTER IN FLIGHT (stop; board 315). While a `slice-tester` contract request is pending in
+testing.py, a check that fails only in that tester's files (the slice's sealed tests and what the
+tester wrote) is a `warn` naming them: RED before the code is the design, so no block, no count, no
+escalation. A failure anywhere else blocks as before. See "board 315" below.
+
 A SHARED TREE (stop; board 305). While a live board runner holds .claude/state/board/lock and this
 session is not one it started, the runner's unfinished work is in the same diff. The layer then
 judges only the files this session's own tool calls wrote (shared_tree.py): the others are left out
@@ -688,8 +693,14 @@ def delete_guard_module() -> Any:
 def delete_guard(root: Path, layer: str, diff_ref: str | None, env: dict[str, str], report: Report) -> None:
     """Code no test touched is not deleted in silence (delete_guard.py): a function, a class, a file,
     or more than DELETE_GUARD_LINES lines inside one function."""
+    retired = retired_by_update(root, layer, diff_ref)
+    if retired:
+        report.add(Finding(None, None, "installed", "log",
+                           f"{len(retired)} file(s) removed by an engine update not yet committed (retired by the engine) — not judged"))
     for item in delete_guard_module().check(root, layer, diff_ref, env, contract_grants(root)):
         finding = Finding(**item)
+        if finding.file in retired:
+            continue
         report.add(finding)
         if finding.severity == "block":
             where = f"{finding.file}:{finding.line}" if finding.line else str(finding.file)
@@ -741,12 +752,27 @@ def add_guarded(report: Report, found: list[dict[str, Any]]) -> None:
         report.reasons.append(f"GUARDED FILE {finding.file} [{finding.rule}] {finding.message}. {finding.hint}")
 
 
+def gone_files(root: Path, layer: str, diff_ref: str | None) -> list[str]:
+    args = ["--cached"] if layer == "pre_commit" else [diff_ref or "HEAD"]
+    return lines_of(git(root, "diff", "--name-only", "--diff-filter=D", *args))
+
+
+def retired_by_update(root: Path, layer: str, diff_ref: str | None) -> set[str]:
+    """The files an engine update not yet committed removed because the engine no longer ships them
+    (installed.retired, proposal 1778): no turn's deletion."""
+    if layer not in ("stop", "pre_commit"):
+        return set()
+    base = "HEAD" if layer == "pre_commit" else diff_ref
+    retired: set[str] = installed_module().retired(root, gone_files(root, layer, diff_ref), ref=base, index=layer == "pre_commit")
+    return retired
+
+
 def deleted_code(root: Path, layer: str, diff_ref: str | None, env: dict[str, str],
                  own: set[str] | None = None) -> list[str]:
     """Working-code files the change removed: `changed_files` lists only what still exists."""
-    args = ["--cached"] if layer == "pre_commit" else [diff_ref or "HEAD"]
-    gone = lines_of(git(root, "diff", "--name-only", "--diff-filter=D", *args))
-    return [rel for rel in gone if delete_guard_module().is_working_code(env, rel) and (own is None or rel in own)]
+    retired = retired_by_update(root, layer, diff_ref)
+    return [rel for rel in gone_files(root, layer, diff_ref)
+            if delete_guard_module().is_working_code(env, rel) and (own is None or rel in own) and rel not in retired]
 
 
 def guard_baseline(root: Path, rel: str, old: str | None, new: str | None, report: Report) -> None:
@@ -923,11 +949,14 @@ def judge_step(report: Report, base: dict[str, Any], kind: str, command: str, rc
 def run_checks(root: Path, env: dict[str, str], files: list[str], full: bool, report: Report) -> None:
     """lint, then types, then tests only if those passed — as the Stop hook always did."""
     base = load_snapshot(root, report)
+    held = None if full else tester_in_flight(root)
     failed = False
     for kind, command in check_steps(root, env, files, full, report, snapshot=base is not None):
         if kind == "tests" and failed:
             break
         rc, out, ms = run_shell(root, command)
+        if held and rc != 0 and held_failure(report, kind, command, out, ms, held):
+            continue
         if base is None:
             record_step(report, kind, command, rc, out, ms)
             failed = failed or rc != 0
@@ -1298,6 +1327,66 @@ def sealed_tests(root: Path) -> set[str]:
         if isinstance(data, dict) and isinstance(data.get("files"), dict):
             files.update(str(rel) for rel in data["files"])
     return files
+
+
+# ------------------------------------------------------------------ board 315: the tester's RED in flight
+#
+# On 2026-11-06 (project mamamemory) a background slice tester was still writing the RED contract tests
+# of S4 when the builder's turns ended: TESTS FAILED three Stops in a row, and the gate put a question to
+# the owner (tasks/blocked/903) about tests that were red by design. While testing.py holds a pending
+# `--tester contract` request, a check that fails ONLY in that tester's files — the slice's sealed tests
+# and every file the tester wrote (testing.py `note_written`) — is a `warn` that names them and says why:
+# no block, no count towards GATE_MAX_BLOCKS, no escalation. A failure anywhere else, alone or beside
+# them, blocks as before. The stop layer only: a commit and CI judge the tree as it is. A failure that
+# names no file (unittest's `FAIL: test (module.Class)`, a command's own exit) is not the tester's.
+
+TESTING_PENDING_REL = Path(".claude/state/testing/pending.json")
+TESTING_REQUESTS_REL = Path(".claude/state/testing/requests")
+
+
+def tester_in_flight(root: Path) -> tuple[str, set[str]] | None:
+    """(slice, its tester's files) while a `slice-tester` contract request is pending; else None."""
+    def read(path: Path) -> dict[str, Any]:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    waiting = read(root / TESTING_PENDING_REL)
+    ident = str(waiting.get("id") or "")
+    if waiting.get("agent") != "slice-tester" or not re.fullmatch(r"[\w.-]+", ident):
+        return None
+    request = read(root / TESTING_REQUESTS_REL / ident / "request.json")
+    slug = str(request.get("slice") or "")
+    if request.get("mode") != "contract" or not re.fullmatch(r"[\w.-]+", slug):
+        return None
+    sealed = read(root / TESTING_SEALS_REL / f"{slug}.json").get("files")
+    written = read(root / TESTING_REQUESTS_REL / ident / "written.json").get("files")
+    files = {str(f) for f in (sealed if isinstance(sealed, dict) else {})}
+    files |= {str(f) for f in (written if isinstance(written, list) else [])}
+    return slug, files
+
+
+def held_failure(report: Report, kind: str, command: str, out: str, ms: int, held: tuple[str, set[str]]) -> bool:
+    """True when the failure of this step lies in the tester's files only — then it is recorded as a
+    `warn` with the reason and does not block; False, and nothing is recorded, otherwise."""
+    slug, files = held
+    if kind == "tests":
+        named = {name.split("::")[0] for name in baseline_module().failed_tests(out)}
+    else:
+        named = {m["file"] for m in DIAGNOSTIC_RE.finditer(out)}
+    named = {Path(os.path.relpath(n, report.root) if os.path.isabs(n) else n).as_posix().removeprefix("./") for n in named}
+    if not named or not named <= files:
+        return False
+    report.steps_ms[kind] = report.steps_ms.get(kind, 0) + ms
+    why = (f"{HEADINGS[kind]} only in the tests of {slug}'s slice tester, which is still at work (a pending "
+           f"`testing.py request {slug} --tester contract`): RED before the code is the design, so this is not counted "
+           f"towards GATE_MAX_BLOCKS and opens no escalation (board 315)")
+    for rel in sorted(named):
+        report.add(Finding(rel, None, kind, "warn", f"skipped — {why}", f"re-run after the tester's hand-in: {command}"))
+    report.extra.setdefault("tester_in_flight", {"slice": slug, "skipped": {}})["skipped"][kind] = sorted(named)
+    return True
 
 
 def style_key(root: Path, f: Finding) -> str:
@@ -1713,6 +1802,11 @@ def finish_stop(report: Report, root: Path, session: str) -> tuple[str, dict[str
     proposed = settle_style(report, root, giving_up=False)
     told = ({"systemMessage": "GATE: style only, not a stop (board 310) — proposed for later: " + ", ".join(proposed)}
             if proposed else {})
+    held = report.extra.get("tester_in_flight")
+    if held and not report.blocked:
+        said = "GATE: RED in the tests of the slice tester still at work, not a stop (board 315) — skipped: " + ", ".join(
+            sorted({f for files in held["skipped"].values() for f in files}))
+        told = {"systemMessage": told["systemMessage"] + "\n" + said if told else said}
     if not report.blocked:
         write_count(root, session, 0)
         report.extra["stop"] = {"consecutive_blocks": 0, "max": limit, "escalated": False}

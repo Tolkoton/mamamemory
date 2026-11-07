@@ -12,7 +12,8 @@ a row made no commit, and what every attempt reported as its cost.
                                                              prints `limit` when the session only
                                                              answered with a usage-limit notice,
                                                              `auth` when it only said that claude
-                                                             is logged out
+                                                             is logged out, `failed` when it ended
+                                                             in an error within seconds (board 411)
     board_state.py <state-dir> rebudget <task>               what is spent so far no longer counts
                                                              against the cap (the owner answered a
                                                              task parked for its budget)
@@ -20,6 +21,10 @@ a row made no commit, and what every attempt reported as its cost.
                                                              | left (cap minus what was spent since
                                                              the last rebudget, two decimals)
     board_state.py <state-dir> finish <task> <outcome>       done | blocked: close the entry
+    board_state.py <state-dir> forget <task>                 the next attempt starts a fresh conversation
+    board_state.py <state-dir> hollow <output> <seconds>     why the session in <output> did no work —
+                                                             `error`, `no-output`, `one-turn`, `seconds` —
+                                                             or nothing (board 410)
     board_state.py <state-dir> report                        one line per task, the total, and what every
                                                              UTC day cost: the day in progress and the seven
                                                              before it (BOARD_TODAY=YYYY-MM-DD names "today")
@@ -46,6 +51,18 @@ cost what its conversation's running total grew by, and that is put on the UTC d
 own `utc`; the days of every task add up to the tasks' costs. A day with nothing spent is shown as
 0.00, not left out. An attempt with no time (a record older than the field) is not put on any day:
 it is a line of its own. Nothing stops and nothing warns: BOARD_MAX_USD per task stays as it is.
+
+A HOLLOW SESSION (board 410). The runner's turn back for the minimum once lasted 14 seconds and did
+nothing, and the task was parked as if the agent had been asked and failed. `hollow` reads what the
+session left: no result at all, an error, a single turn (no tool was called), or less time than the
+runner allows. A field the output does not carry decides nothing.
+
+A FAILED SESSION IS NOT AN ATTEMPT (board 411). ThinkHow 737 was parked `no-commit` after three attempts,
+the second of which ended in 13 seconds with an API error («safeguards flagged this message») and did
+nothing. `record` does not count such an attempt — no output at all, or `is_error` within FAILED_MAX_MS —
+in `attempts_without_commit`, up to FAILED_RETRIES in a row (`failed_in_row`; the one after counts as
+before, so a session that always fails still parks); the second in a row also drops the conversation,
+so the next try is a fresh one. A long session that ends in an error did work, and counts.
 """
 
 from __future__ import annotations
@@ -69,6 +86,10 @@ USAGE_LIMIT = re.compile(r"hit your (?:session|usage|weekly|daily|monthly|\w+) l
 LOGGED_OUT = re.compile(r"please run /login|invalid api key|not logged in|authentication_error|OAuth token (?:has expired|has been revoked|revoked)",
                         re.IGNORECASE)
 NOTICE_MAX_CHARS = 400
+# A FAILED SESSION (board 411): an attempt that ended in an error of the API or of the session within this
+# time did no work; up to FAILED_RETRIES of them in a row are not the task's attempts (STALL_ATTEMPTS).
+FAILED_MAX_MS = 60_000
+FAILED_RETRIES = 3
 
 
 def now() -> str:
@@ -152,11 +173,42 @@ def record(found: JsonObj, output: Path, committed: bool) -> str:
     # attempt starts a fresh conversation rather than resuming one that may not exist.
     found["session_id"] = session
     found["cost_usd"] = cost_of(found["attempts"])
+    failed = not committed and not limit and not auth and session_failed(payload, text)
+    retried = int(found.get("failed_in_row", 0))
+    found["failed_in_row"] = retried + 1 if failed else 0
+    found["attempts"][-1]["failed"] = failed
     if committed:
         found["attempts_without_commit"] = 0
+    elif failed and retried < FAILED_RETRIES:
+        if retried:   # failed twice in a row: the next try is a fresh conversation, not the one that keeps failing
+            found["session_id"] = ""
+        return "failed"
     elif not limit and not auth:
         found["attempts_without_commit"] = int(found["attempts_without_commit"]) + 1
     return "limit" if limit else "auth" if auth else ""
+
+
+def session_failed(payload: JsonObj | None, text: str) -> bool:
+    """A FAILED SESSION: no result at all, or an error — and, where the output says how long it ran, within
+    FAILED_MAX_MS. ThinkHow 737's second attempt: «API Error … safeguards flagged this message», 13 s."""
+    if payload is None:
+        return not text.strip()
+    took = payload.get("duration_ms")
+    return bool(payload.get("is_error")) and not (isinstance(took, (int, float)) and took >= FAILED_MAX_MS)
+
+
+def hollow(output: Path, seconds: float) -> str:
+    payload, _ = read_output(output)
+    if payload is None:
+        return "no-output"
+    if payload.get("is_error"):
+        return "error"
+    turns, took = payload.get("num_turns"), payload.get("duration_ms")
+    if isinstance(turns, int) and turns <= 1:
+        return "one-turn"
+    if isinstance(took, (int, float)) and took < seconds * 1000:
+        return "seconds"
+    return ""
 
 
 def get(found: JsonObj, field: str, cap: str) -> str:
@@ -348,6 +400,9 @@ def main(argv: list[str]) -> int:
     if not rest:
         print(f"board_state: {command} needs a task", file=sys.stderr)
         return 2
+    if command == "hollow" and len(rest) == 2:
+        print(hollow(Path(rest[0]), float(rest[1])))
+        return 0
     if command == "retry":
         old = data["tasks"].get(rest[0], {})
         data["tasks"][rest[0]] = {"cost_usd": old.get("cost_usd", 0.0), "attempts": old.get("attempts", []),
@@ -355,6 +410,8 @@ def main(argv: list[str]) -> int:
     found = entry(data, rest[0])
     if command in ("begin", "retry"):
         pass
+    elif command == "forget":
+        found["session_id"] = ""
     elif command == "rebudget":
         found["budget_from"] = float(found["cost_usd"])
     elif command == "record" and len(rest) == 3:

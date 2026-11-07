@@ -21,6 +21,13 @@ project whose engine is committed rewrites files the base has. Such a file is th
 when the base's own lock recorded exactly the base's blob (the engine's file as it shipped,
 untouched) AND the working lock records exactly the working content. The owner's committed edit
 of an engine file fails the first, a turn's edit after the update the second.
+The same update may REMOVE an engine file it no longer ships (proposal 1778):
+
+    retired(root, gone, ref=None, index=False) -> set[str]
+
+names those of the deleted files `gone` the base holds exactly as the base's lock recorded them and
+the working lock (with `index`, the staged one) no longer names — the engine took them back, no turn
+deleted them. A file the owner had edited, or one the new lock still lists, is judged as before.
 A file that differs from the lock by one byte is somebody's edit — and then
 
     seed_text(root, rel, ref=None) -> str | None
@@ -133,6 +140,16 @@ def pristine_in_base(root: Path, ref: str, files: list[str]) -> set[str]:
     then = recorded_at(root, ref)
     blobs = base_blobs(root, ref, [rel for rel in files if rel in then])
     return {rel for rel, blob in blobs.items() if then.get(rel) == blob}
+
+
+def retired(root: Path, gone: list[str], ref: str | None = None, index: bool = False) -> set[str]:
+    """Of the deleted files `gone`, those the engine's update retired: pristine in the base, not in the new lock."""
+    if not gone:
+        return set()
+    now = recorded_at(root, "") if index else recorded(root)
+    if not now:   # no lock, an unreadable lock: nothing is taken on trust
+        return set()
+    return {rel for rel in pristine_in_base(root, ref or "HEAD", gone) if rel not in now}
 
 
 def seed_text(root: Path, rel: str, ref: str | None = None) -> str | None:

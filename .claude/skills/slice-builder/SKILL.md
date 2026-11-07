@@ -206,6 +206,8 @@ The next slice does not start without this decision, nor while a check it said t
 
 Stage the slice's files with `git add`, print a one-line summary and a suggested conventional-commit message, and continue to the next unblocked item. Do NOT commit on the user's behalf: staging is a review checkpoint, not a stopping condition. Staged work accumulates for the human to review whenever they return; it does not gate the next slice.
 
+Unattended, on the run's own `unattended/*` branch, the verified result is committed through `.claude/unattended/commit_checkpoint.sh <node>` instead — whether an audit follows or not (board 411). Never wait for an audit with the commit: an audit the Stop hook asked for is answered in the same turn, and a claim it did not take it says so (`UNIT CLAIM NOT TAKEN`).
+
 ## Anti-patterns (refuse politely if user requests these mid-slice)
 
 If the user asks for any of the following DURING the slice, push them out of scope:
