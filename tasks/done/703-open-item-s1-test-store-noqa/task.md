@@ -24,4 +24,4 @@ Stop gate (bypass guard) блокує tests/test_store.py:91 — '# noqa: BLE001
    - (B) A one-time reseal from your terminal or by Sonko: `cd /home/lao/projects/mamamemory && python3 -c "import sys,pathlib; sys.path.insert(0,'.claude/hooks'); import testing; testing.seal_files(pathlib.Path('.'), 'access-shell', ['tests/test_store.py'], {})"`. It is fast, but it goes around the engine and leaves no row in `.engine/testing/ledger.md`.
    - (C) A third dispute round: it parks the `access-shell` slice with a «хто правий» question. It does not reseal anything, so this is a dead end.
    My advice: (A). This case will come up again whenever the owner allows a fix to a sealed test after two rounds. If you need S1 unblocked sooner, do (B) now as well, and (A) as a separate engine task.
-   Відповідь:
+   Відповідь: так (розмова з сесією mamamemory, 2026-11-06, цитата: «Так, 703 треба прибрати.»; reseal тестів S1 уже виконано в задачі 715; 2026-11-07 ~10:55 UTC: «Так»)
