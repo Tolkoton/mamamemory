@@ -97,7 +97,6 @@ def deployment() -> Iterator[Deployment]:
     port = free_port()
     base = f"http://127.0.0.1:{port}"
     config = Config(
-        allowed_emails=frozenset({"mama@example.com"}),
         gcp_project="pocket-lawyer-431614",
         firestore_database="mamamemory",
         vertex_location="eu",

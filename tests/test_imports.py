@@ -23,8 +23,7 @@ import mamamemory.config, mamamemory.errors
 import mamamemory.integrations.store, mamamemory.integrations.google_auth
 now = datetime(2026, 11, 5, 12, 0, 0, tzinfo=UTC)
 value = access.session_cookie_value("1", "mama@example.com", now, key="k")
-allowed = frozenset({"mama@example.com"})
-claims = access.verify_session_cookie(value, now, key="k", allowed_emails=allowed, max_age_s=60)
+claims = access.verify_session_cookie(value, now, key="k", max_age_s=60)
 assert claims.sub == "1", claims
 for mod in list(sys.modules):
     assert not mod.startswith(("fastapi.", "starlette.")), mod

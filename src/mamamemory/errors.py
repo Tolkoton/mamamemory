@@ -5,10 +5,6 @@ class NotSignedIn(Exception):
     """Немає чинної сесії: cookie відсутнє чи підроблене."""
 
 
-class NotAllowed(Exception):
-    """Акаунт не входить до дозволених (ALLOWED_EMAILS) або email не перевірено."""
-
-
 class LoginExpired(Exception):
     """Сесія застаріла або Google більше не оновлює токен (тижневий тестовий вхід сплив)."""
 
@@ -23,3 +19,7 @@ class MissingScopes(Exception):
     def __init__(self, missing: frozenset[str]) -> None:
         super().__init__(f"missing scopes: {sorted(missing)}")
         self.missing = missing
+
+
+class AudioRejected(Exception):
+    """Звук не прийнято: порожній, понад межу, недозволеного типу чи модель не почула нічого (S2)."""

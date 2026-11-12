@@ -1,0 +1,28 @@
+{
+  "guide": {
+    "chars": 350,
+    "bytes": 645,
+    "seconds": 10.3,
+    "audio_bytes": 118492,
+    "ogg": true
+  },
+  "700": {
+    "chars": 700,
+    "bytes": 1270,
+    "seconds": 60.55,
+    "error": "ServiceUnavailable: 503 502:Bad Gateway"
+  },
+  "1500": {
+    "chars": 1500,
+    "bytes": 2721,
+    "seconds": 60.56,
+    "error": "ServiceUnavailable: 503 502:Bad Gateway"
+  },
+  "1500_emoji": {
+    "chars": 1352,
+    "bytes": 2496,
+    "seconds": 7.39,
+    "audio_bytes": 36428,
+    "ogg": true
+  }
+}

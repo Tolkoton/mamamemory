@@ -1,11 +1,14 @@
 """Contract tests of the slice access-shell: `Config` from the environment, regions (Seam 3, I3).
 
-Written by the slice tester from the sealed contract `.engine/slices/access-shell.md`.
+Written by the slice tester from the sealed contract `.engine/slices/access-shell.md`; the list of allowed
+accounts removed by the slice tester of `.engine/slices/open-sign-in.md` (no `ALLOWED_EMAILS`, no field).
 """
+
+from dataclasses import fields
 
 import pytest
 
-from mamamemory.config import load_config
+from mamamemory.config import Config, load_config
 
 SCOPES = (
     "openid",
@@ -18,7 +21,6 @@ SCOPES = (
 
 def _environ(**over: str) -> dict[str, str]:
     env = {
-        "ALLOWED_EMAILS": "mama@example.com",
         "GCP_PROJECT": "pocket-lawyer-431614",
         "FIRESTORE_DATABASE": "mamamemory",
         "VERTEX_LOCATION": "eu",
@@ -39,7 +41,7 @@ def _environ(**over: str) -> dict[str, str]:
 
 def test_config_is_read_from_the_environment() -> None:
     config = load_config(_environ())
-    assert config.allowed_emails == frozenset({"mama@example.com"})
+    assert "allowed_emails" not in {f.name for f in fields(Config)}
     assert config.gcp_project == "pocket-lawyer-431614"
     assert config.firestore_database == "mamamemory"
     assert config.vertex_location == "eu"

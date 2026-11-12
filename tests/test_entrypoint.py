@@ -1,7 +1,9 @@
 """Catch-up contract tests of the slice access-shell: the Cloud Run entry point `mamamemory.main`.
 
 Written by the slice tester from the sealed contract `.engine/slices/access-shell.md` and the public
-signatures only. The entry point builds the real dependencies from the environment at import time, so
+signatures only; the list of allowed accounts removed by the slice tester of `.engine/slices/open-sign-in.md`
+(`ALLOWED_EMAILS` is not read: set or not, any account's session gets the shell). The entry point builds
+the real dependencies from the environment at import time, so
 every test imports it afresh under an environment it sets; Firestore's client is replaced by a mock, so
 nothing here touches the network.
 """
@@ -35,7 +37,6 @@ WEEK = timedelta(days=7)
 
 def environ(**over: str) -> dict[str, str]:
     env = {
-        "ALLOWED_EMAILS": MAMA,
         "GCP_PROJECT": PROJECT,
         "FIRESTORE_DATABASE": "mamamemory",
         "VERTEX_LOCATION": "eu",
@@ -154,7 +155,7 @@ def test_entrypoint_store_is_firestore_on_the_configured_project_and_database(
     assert entry.arguments[0]["database"] == "mamamemory"
 
 
-def test_I1_entrypoint_app_gives_no_shell_without_a_valid_session_of_an_allowed_account(
+def test_I1_entrypoint_app_gives_no_shell_without_a_valid_session(
     load_main: Callable[..., Entry],
 ) -> None:
     http = load_main().http()
@@ -168,7 +169,6 @@ def test_I1_entrypoint_app_gives_no_shell_without_a_valid_session_of_an_allowed_
         "not-a-signed-value",
         forge(session_cookie(at=now)),
         session_cookie(at=now - WEEK - timedelta(seconds=60)),
-        session_cookie(email="stranger@example.com", at=now),
         session_cookie(at=now, key="another-key"),
         login_value,
     ]
@@ -176,10 +176,19 @@ def test_I1_entrypoint_app_gives_no_shell_without_a_valid_session_of_an_allowed_
         for value in refused:
             resp = get(http, path, value)
             assert shell.content not in resp.content, (path, value, resp.status_code)
-    # ALLOWED_EMAILS changed on the next deployment: Mama's own valid cookie no longer reaches the shell.
+
+
+def test_entrypoint_allowed_emails_in_the_environment_does_not_cut_any_session(
+    load_main: Callable[..., Entry],
+) -> None:
+    shell = get(load_main().http(), "/", session_cookie(at=datetime.now(UTC)))
+    assert shell.status_code == 200 and shell.content
+    # ALLOWED_EMAILS left in the service's environment names someone else: it is not read.
     http = load_main(ALLOWED_EMAILS="other@example.com").http()
-    resp = get(http, "/", session_cookie(at=datetime.now(UTC)))
-    assert shell.content not in resp.content, resp.status_code
+    for email in (MAMA, "stranger@example.com", "other@example.com"):
+        resp = get(http, "/", session_cookie(email=email, at=datetime.now(UTC)))
+        assert resp.status_code == 200, (email, resp.status_code)
+        assert resp.content == shell.content, email
 
 
 def test_I2_entrypoint_store_keeps_every_document_under_accounts_account_id(

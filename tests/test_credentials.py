@@ -60,7 +60,6 @@ class FakeGoogle:
 
 def make_config() -> Config:
     return Config(
-        allowed_emails=frozenset({MAMA}),
         gcp_project="pocket-lawyer-431614",
         firestore_database="mamamemory",
         vertex_location="eu",

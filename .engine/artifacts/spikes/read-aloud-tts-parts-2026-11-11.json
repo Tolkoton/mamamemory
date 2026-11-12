@@ -1,0 +1,97 @@
+{
+  "plain_150": {
+    "chars": 150,
+    "text": "У понеділок о десятій подзвонити нотаріусу щодо договору на ділянку, а в середу піти до лікаря. У понеділок о десятій подзвонити нотаріусу щодо догово",
+    "runs": [
+      {
+        "seconds": 6.98,
+        "audio_bytes": 56500,
+        "ogg": true
+      },
+      {
+        "seconds": 18.2,
+        "audio_bytes": 183115,
+        "ogg": true
+      },
+      {
+        "seconds": 10.31,
+        "audio_bytes": 70593,
+        "ogg": true
+      },
+      {
+        "seconds": 6.96,
+        "audio_bytes": 65922,
+        "ogg": true
+      },
+      {
+        "seconds": 6.68,
+        "audio_bytes": 56864,
+        "ogg": true
+      }
+    ],
+    "errors": 0,
+    "min": 6.68,
+    "median": 6.98,
+    "max": 18.2
+  },
+  "guide_150": {
+    "chars": 132,
+    "text": "Я допомагаю планувати й пам'ятати справи. Що можна сказати:\n• «Додай задачу подзвонити нотаріусу в понеділок» — поставлю в календар.",
+    "runs": [
+      {
+        "seconds": 6.55,
+        "audio_bytes": 43818,
+        "ogg": true
+      },
+      {
+        "seconds": 6.46,
+        "audio_bytes": 47175,
+        "ogg": true
+      },
+      {
+        "seconds": 7.11,
+        "audio_bytes": 44784,
+        "ogg": true
+      },
+      {
+        "seconds": 6.36,
+        "audio_bytes": 44288,
+        "ogg": true
+      },
+      {
+        "seconds": 6.63,
+        "audio_bytes": 48594,
+        "ogg": true
+      }
+    ],
+    "errors": 0,
+    "min": 6.36,
+    "median": 6.55,
+    "max": 7.11
+  },
+  "plain_100": {
+    "chars": 96,
+    "text": "У понеділок о десятій подзвонити нотаріусу щодо договору на ділянку, а в середу піти до лікаря. ",
+    "runs": [
+      {
+        "seconds": 4.37,
+        "audio_bytes": 32312,
+        "ogg": true
+      },
+      {
+        "seconds": 5.02,
+        "audio_bytes": 36405,
+        "ogg": true
+      },
+      {
+        "seconds": 4.45,
+        "audio_bytes": 33930,
+        "ogg": true
+      }
+    ],
+    "errors": 0,
+    "min": 4.37,
+    "median": 4.45,
+    "max": 5.02
+  }
+}

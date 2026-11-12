@@ -89,6 +89,10 @@ GUARDED_PATTERNS=(
   # in the branch or through the inbox; a number written here in the ordinary way the runner removes
   # before its push (not one a session works to get past it: docs/engine-limits.md, «The same Linux user»).
   '(^|/)tasks/\.reviewed$'
+  # The project's stage (board 207): `internal` or `production`, the owner's line. In production a
+  # contract sealed after the critic's objections waits for the owner (stage.py), so an agent that
+  # could write this file could take the owner's review away. Reading it stays free.
+  '(^|/)\.claude/project-stage$'
   '(^|/)\.git/'
   '(^|/)migrations/.*\.py$'
   '(^|/)alembic/versions/.*\.py$'

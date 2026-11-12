@@ -3,10 +3,10 @@
 Не робить: жодної логіки — лише значення, які `planning` і `assistant` повертають, а `http` віддає як JSON.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
-QuestionKind = Literal["duration", "plan"]
+QuestionKind = Literal["duration", "plan", "limits", "priorities", "case", "clarify"]
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,10 @@ class PlanView:
     start: str
     end: str
     fingerprint: str
+    items: list[dict[str, str]] = field(default_factory=list)
+    """Кожна поставлена задача на час: task_id, title, start, end (F2)."""
+    untimed: list[dict[str, str]] = field(default_factory=list)
+    unplaced: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -34,3 +38,5 @@ class Reply:
     text: str
     question: Question | None = None
     plan: PlanView | None = None
+    choices: list[str] | None = None
+    """Фрази двох варіантів під питанням `clarify` — для двох кнопок (clarify)."""

@@ -11,13 +11,16 @@ from typing import Any
 from google.oauth2.credentials import Credentials
 from itsdangerous import BadSignature, URLSafeSerializer
 
-from mamamemory.errors import LoginExpired, NotAllowed, NotSignedIn
+from mamamemory.errors import LoginExpired, NotSignedIn
 from mamamemory.integrations.google_auth import GoogleAuth, Tokens
 from mamamemory.integrations.store import Store
 
 SESSION_SALT = "session"
 LOGIN_SALT = "login"
 TOKENS_PATH = "private/google"
+PROFILE_PATH = "settings/profile"
+LANGUAGES = ("uk",)
+DEFAULT_LANGUAGE = "uk"
 
 
 @dataclass(frozen=True)
@@ -38,16 +41,13 @@ def verify_session_cookie(
     now: datetime,
     *,
     key: str,
-    allowed_emails: frozenset[str],
     max_age_s: int,
 ) -> SessionClaims:
-    """Flow: підпис → вік → дозволений email."""
+    """Flow: підпис → вік. Будь-який акаунт Google (C10); ідентичність — `sub`."""
     payload = _load(cookie, key=key, salt=SESSION_SALT)
     claims = _session_claims(payload)
     if _age_s(claims.iat, now) > max_age_s:
         raise LoginExpired("session is older than allowed")
-    if claims.email not in allowed_emails:
-        raise NotAllowed("account is not allowed")
     return claims
 
 
@@ -129,3 +129,14 @@ def _epoch(now: datetime) -> int:
 
 def _age_s(iat: int, now: datetime) -> int:
     return _epoch(now) - iat
+
+
+def language(session: Session, store: Store) -> str:
+    """Мова розмови акаунта (F5 S1): `settings/profile.language` з `LANGUAGES`, інакше `DEFAULT_LANGUAGE`;
+    помилка читання — теж `DEFAULT_LANGUAGE` (розпізнавання не падає через налаштування)."""
+    try:
+        profile = store.get(session.account_id, PROFILE_PATH)
+    except Exception:
+        return DEFAULT_LANGUAGE
+    chosen = profile.get("language") if profile else None
+    return chosen if chosen in LANGUAGES else DEFAULT_LANGUAGE

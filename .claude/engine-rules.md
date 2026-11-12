@@ -80,11 +80,11 @@ items await ratification (`unattended.md`). To stop for real, emit an `OVERSEER_
 naming the reason — the Stop hook refuses it while a slice of the DAG can start (`slice_queue.py`).
 
 ## Attended vs unattended
-`.claude/state/overseer/mode` containing `unattended` means nobody is watching; absent or
-anything else is attended, the default. The mode changes one thing only: an interactive hard
-gate in `/plan-slice` or `/feature-architect` becomes a park. Everything above holds in both
-modes, Article 5 included — unattended never means "decide it anyway". Unattended
-work runs through the task board only (below); detail: `.claude/references/unattended.md`.
+`.claude/state/overseer/mode` containing `unattended` means nobody is watching; anything else is
+attended. The mode changes one thing only: an interactive hard gate in `/plan-slice` or `/feature-architect`
+becomes a park. All above holds in both modes, Article 5 too — unattended never means "decide it anyway".
+Separate is the stage, `.claude/project-stage` (owner-only): at `production` a contract the critic revised
+waits for the owner (`references/project-stage.md`). Unattended work: the task board only (`unattended.md`).
 
 ## The task board and extra sessions
 Work arrives as files in `tasks/` (`tasks/README.md`): take the first `todo/` task with its

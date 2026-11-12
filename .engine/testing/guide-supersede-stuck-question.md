@@ -1,0 +1,8 @@
+# Supersede package — stuck-question, changed by the sealed contract guide (F5 S2; owner: «запускай f1–f5», frame card 734)
+
+- `tests/test_stuck_question.py::test_seam1_other_under_the_duration_question_is_cannot_and_keeps_the_draft` — guide Seam «Незрозуміле»: `CANNOT_TEXT` = «Не зрозуміла. Скажіть «що ти вмієш?» — розкажу.» замість «Поки що я вмію записати одну задачу в календар.»; тест тримає старий текст чи префікс «Поки що я вмію». Переписати на новий текст; решта тверджень — як були.
+- `tests/test_stuck_question.py::test_seam1_other_under_the_priorities_question_is_cannot_and_keeps_the_draft` — guide Seam «Незрозуміле»: `CANNOT_TEXT` = «Не зрозуміла. Скажіть «що ти вмієш?» — розкажу.» замість «Поки що я вмію записати одну задачу в календар.»; тест тримає старий текст чи префікс «Поки що я вмію». Переписати на новий текст; решта тверджень — як були.
+- `tests/test_stuck_question.py::test_seam1_other_under_the_limits_question_is_cannot_and_keeps_the_draft` — guide Seam «Незрозуміле»: `CANNOT_TEXT` = «Не зрозуміла. Скажіть «що ти вмієш?» — розкажу.» замість «Поки що я вмію записати одну задачу в календар.»; тест тримає старий текст чи префікс «Поки що я вмію». Переписати на новий текст; решта тверджень — як були.
+- `tests/test_stuck_question.py::test_I1_a_phrase_that_is_no_answer_never_gives_the_same_question_again` — guide Seam «Незрозуміле»: `CANNOT_TEXT` = «Не зрозуміла. Скажіть «що ти вмієш?» — розкажу.» замість «Поки що я вмію записати одну задачу в календар.»; тест тримає старий текст чи префікс «Поки що я вмію». Переписати на новий текст; решта тверджень — як були.
+
+Requested: rewrite each listed test to the new contract; `uv run pytest -q` green.

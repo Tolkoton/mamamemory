@@ -1,6 +1,8 @@
 """Contract tests of the slice access-shell: the one error handling writes one clean line (журнал).
 
-Written by the slice tester from the sealed contract `.engine/slices/access-shell.md`.
+Written by the slice tester from the sealed contract `.engine/slices/access-shell.md`. The error that goes
+through the one handler moved from `NotAllowed` (gone, `.engine/slices/open-sign-in.md`) to
+`OAuthStateMismatch` → 400, another error of the same handling.
 """
 
 from datetime import UTC, datetime
@@ -43,7 +45,6 @@ class FakeGoogle:
 
 def make_config() -> Config:
     return Config(
-        allowed_emails=frozenset({"mama@example.com"}),
         gcp_project="pocket-lawyer-431614",
         firestore_database="mamamemory",
         vertex_location="eu",
@@ -72,8 +73,8 @@ def test_error_through_the_one_handler_writes_one_stdout_line_without_token_cook
     assert login_cookie
     capfd.readouterr()
 
-    resp = client.get("/auth/callback", params={"code": "code-SECRET-1", "state": "state-1"})
-    assert resp.status_code == 403  # NotAllowed, translated by the one handler
+    resp = client.get("/auth/callback", params={"code": "code-SECRET-1", "state": "state-forged"})
+    assert resp.status_code == 400  # OAuthStateMismatch, translated by the one handler
 
     lines = [line for line in capfd.readouterr().out.splitlines() if line.strip()]
     assert len(lines) == 1, lines

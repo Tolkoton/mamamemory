@@ -1,6 +1,8 @@
 """Contract tests of the slice access-shell: sign-in through Google (Seam 1, Seam 1a).
 
-Written by the slice tester from the sealed contract `.engine/slices/access-shell.md`.
+Written by the slice tester from the sealed contract `.engine/slices/access-shell.md`. Without the list of
+allowed accounts (`.engine/slices/open-sign-in.md`): any account gets a session (Seam 2), `email_verified`
+is not checked (Q1).
 """
 
 import base64
@@ -24,6 +26,7 @@ from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
 from requests.structures import CaseInsensitiveDict
 
+from mamamemory import access
 from mamamemory.config import SCOPES, Config
 from mamamemory.errors import MissingScopes
 from mamamemory.http.app import create_app
@@ -36,7 +39,6 @@ SUB = "1000000000000000001"
 T0 = datetime(2026, 11, 5, 12, 0, 0, tzinfo=UTC)
 CLIENT_ID = "client-id.apps.googleusercontent.com"
 BASE_URL = "https://mamamemory.example"
-FORBIDDEN_TEXT = "Цей акаунт не має доступу."
 TASKS = "https://www.googleapis.com/auth/tasks"
 
 
@@ -82,7 +84,6 @@ class FakeGoogle:
 
 def make_config(base_url: str = "https://testserver") -> Config:
     return Config(
-        allowed_emails=frozenset({MAMA}),
         gcp_project="pocket-lawyer-431614",
         firestore_database="mamamemory",
         vertex_location="eu",
@@ -177,22 +178,34 @@ def test_callback_exchanges_code_with_code_verifier_of_the_latest_login() -> Non
     assert rig.google.exchanges == [("code-42", rig.google.issued["state-2"])]
 
 
-def test_callback_email_not_allowed_is_403_without_session() -> None:
-    rig = Rig(claims=Claims(sub="2000000000000000002", email="stranger@example.com", email_verified=True))
-    rig.login()
-    resp = rig.callback()
-    assert resp.status_code == 403
-    assert FORBIDDEN_TEXT in resp.text
-    rig.no_session(resp)
+def test_seam2_callback_of_any_new_account_sets_its_session_tokens_under_its_sub_and_302_home() -> None:
+    for sub, email in [("2000000000000000002", "stranger@example.com"), ("7", "someone.else@gmail.com")]:
+        rig = Rig(claims=Claims(sub=sub, email=email, email_verified=True))
+        rig.login()
+        resp = rig.callback()
+        assert resp.status_code == 302, (sub, resp.status_code)
+        assert path_of(resp) == "/"
+        doc = rig.store.get(sub, "private/google")
+        assert doc is not None, sub
+        assert "rt-1" in json.dumps(doc, default=str)
+        assert rig.store.get(SUB, "private/google") is None, "the tokens went under another account"
+        value = resp.cookies.get("mm_session")
+        assert value
+        claims = access.verify_session_cookie(value, T0, key=KEY, max_age_s=7 * 24 * 3600)
+        assert claims.sub == sub
+        assert rig.client.get("/").status_code == 200
 
 
-def test_callback_email_not_verified_gives_no_session() -> None:
+def test_callback_email_not_verified_still_gives_a_session() -> None:
     rig = Rig(claims=Claims(sub=SUB, email=MAMA, email_verified=False))
     rig.login()
     resp = rig.callback()
-    assert not (resp.status_code == 302 and path_of(resp) == "/")
-    rig.no_session(resp)
-    assert rig.client.get("/").status_code != 200
+    assert resp.status_code == 302
+    assert path_of(resp) == "/"
+    assert rig.store.get(SUB, "private/google") is not None
+    flags = flags_of(cookie_header(resp, "mm_session"))
+    assert {"secure", "httponly", "samesite=lax"} <= flags
+    assert rig.client.get("/").status_code == 200
 
 
 def test_callback_state_other_than_login_cookie_is_400() -> None:

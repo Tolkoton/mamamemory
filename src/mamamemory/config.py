@@ -25,13 +25,21 @@ DEFAULT_MODELS: Mapping[str, ModelChoice] = {
     "parse_task": ModelChoice("gemini-3.5-flash-lite"),
     "parse_duration": ModelChoice("gemini-3.5-flash-lite"),
     "route": ModelChoice("gemini-3.5-flash-lite"),
+    "parse_limits": ModelChoice("gemini-3.5-flash-lite"),
+    "parse_priorities": ModelChoice("gemini-3.5-flash-lite"),
+    "parse_edit": ModelChoice("gemini-3.5-flash-lite"),
+    "classify_case": ModelChoice("gemini-3.8-flash"),
+    "describe_case": ModelChoice("gemini-3.8-flash"),
+    "name_case": ModelChoice("gemini-3.5-flash-lite"),
+    "read_file": ModelChoice("gemini-3.5-flash-lite"),
+    "choose_material": ModelChoice("gemini-3.8-flash"),
+    "choose_option": ModelChoice("gemini-3.5-flash-lite"),
     "transcribe": ModelChoice("gemini-3.8-flash"),
 }
 
 
 @dataclass(frozen=True)
 class Config:
-    allowed_emails: frozenset[str]
     gcp_project: str
     firestore_database: str
     vertex_location: str
@@ -48,6 +56,16 @@ class Config:
     scopes: tuple[str, ...] = SCOPES
     models: Mapping[str, ModelChoice] = field(default_factory=lambda: dict(DEFAULT_MODELS))
     step_min: int = 15
+    language: str = "uk"
+    max_audio_bytes: int = 6 * 1024 * 1024
+    ask_limits: bool = False
+    ask_priorities: bool = False
+    use_tasks: bool = False
+    files_bucket: str = ""
+    max_upload_bytes: int = 20 * 1024 * 1024
+    """Чи читати й писати Google Tasks (google-tasks F2); `load_config` вмикає."""
+    """Чи питати «що важливіше?» (priorities F2); `load_config` вмикає."""
+    """Чи питати мамині межі часу (time-limits F2); `load_config` вмикає, тести з `Config` напряму — ні."""
 
 
 EU_TTS_ENDPOINT = "eu-texttospeech.googleapis.com"
@@ -63,7 +81,6 @@ def load_config(environ: Mapping[str, str]) -> Config:
 
 def _read(environ: Mapping[str, str]) -> Config:
     return Config(
-        allowed_emails=_emails(environ["ALLOWED_EMAILS"]),
         gcp_project=environ["GCP_PROJECT"],
         firestore_database=environ["FIRESTORE_DATABASE"],
         vertex_location=environ["VERTEX_LOCATION"],
@@ -77,11 +94,11 @@ def _read(environ: Mapping[str, str]) -> Config:
         base_url=environ["BASE_URL"].rstrip("/"),
         request_timeout_s=int(environ["REQUEST_TIMEOUT_S"]),
         call_timeout_s=int(environ["CALL_TIMEOUT_S"]),
+        files_bucket=environ.get("FILES_BUCKET") or f"{environ['GCP_PROJECT']}-mamamemory-files",
+        ask_limits=True,
+        ask_priorities=True,
+        use_tasks=True,
     )
-
-
-def _emails(raw: str) -> frozenset[str]:
-    return frozenset(part.strip() for part in raw.split(",") if part.strip())
 
 
 def _check_regions(config: Config) -> None:

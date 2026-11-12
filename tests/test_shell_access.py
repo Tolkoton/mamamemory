@@ -1,6 +1,8 @@
 """Contract tests of the slice access-shell: the session check and the shell behind it (I1).
 
-Written by the slice tester from the sealed contract `.engine/slices/access-shell.md`.
+Written by the slice tester from the sealed contract `.engine/slices/access-shell.md`. Without the list of
+allowed accounts (`.engine/slices/open-sign-in.md`): no `NotAllowed`, no 403; a session of another account
+gets the shell.
 """
 
 from collections.abc import Iterator
@@ -14,7 +16,7 @@ from google.oauth2.credentials import Credentials
 
 from mamamemory import access
 from mamamemory.config import SCOPES, Config
-from mamamemory.errors import LoginExpired, NotAllowed, NotSignedIn
+from mamamemory.errors import LoginExpired, NotSignedIn
 from mamamemory.http.app import create_app
 from mamamemory.integrations.google_auth import Claims, GoogleAuth, Tokens
 from mamamemory.integrations.store import InMemoryStore
@@ -24,7 +26,6 @@ MAMA = "mama@example.com"
 SUB = "1000000000000000001"
 T0 = datetime(2026, 11, 5, 12, 0, 0, tzinfo=UTC)
 WEEK_S = 7 * 24 * 3600
-FORBIDDEN_TEXT = "Цей акаунт не має доступу."
 
 
 class Clock:
@@ -60,9 +61,8 @@ class FakeGoogle:
         return Credentials("fresh-at")
 
 
-def make_config(allowed: frozenset[str] = frozenset({MAMA})) -> Config:
+def make_config() -> Config:
     return Config(
-        allowed_emails=allowed,
         gcp_project="pocket-lawyer-431614",
         firestore_database="mamamemory",
         vertex_location="eu",
@@ -110,9 +110,7 @@ def location_path(resp: Any) -> str:
 
 def test_session_cookie_round_trip_gives_claims() -> None:
     value = session_value()
-    claims = access.verify_session_cookie(
-        value, T0 + timedelta(hours=1), key=KEY, allowed_emails=frozenset({MAMA}), max_age_s=WEEK_S
-    )
+    claims = access.verify_session_cookie(value, T0 + timedelta(hours=1), key=KEY, max_age_s=WEEK_S)
     assert claims.sub == SUB
     assert claims.email == MAMA
     assert claims.iat == int(T0.timestamp())
@@ -124,34 +122,21 @@ def test_session_cookie_missing_or_forged_is_not_signed_in() -> None:
     other_key = session_value(key="another-key")
     for value in [None, "", "garbage", forged, other_key]:
         with pytest.raises(NotSignedIn):
-            access.verify_session_cookie(
-                value, T0, key=KEY, allowed_emails=frozenset({MAMA}), max_age_s=WEEK_S
-            )
+            access.verify_session_cookie(value, T0, key=KEY, max_age_s=WEEK_S)
 
 
 def test_session_cookie_age_up_to_max_age_is_accepted_older_is_login_expired() -> None:
     value = session_value()
-    allowed = frozenset({MAMA})
-    at_edge = access.verify_session_cookie(
-        value, T0 + timedelta(seconds=WEEK_S), key=KEY, allowed_emails=allowed, max_age_s=WEEK_S
-    )
+    at_edge = access.verify_session_cookie(value, T0 + timedelta(seconds=WEEK_S), key=KEY, max_age_s=WEEK_S)
     assert at_edge.sub == SUB
     with pytest.raises(LoginExpired):
-        access.verify_session_cookie(
-            value, T0 + timedelta(seconds=WEEK_S + 1), key=KEY, allowed_emails=allowed, max_age_s=WEEK_S
-        )
-
-
-def test_session_cookie_of_email_not_allowed_is_not_allowed() -> None:
-    value = session_value(email="stranger@example.com")
-    with pytest.raises(NotAllowed):
-        access.verify_session_cookie(value, T0, key=KEY, allowed_emails=frozenset({MAMA}), max_age_s=WEEK_S)
+        access.verify_session_cookie(value, T0 + timedelta(seconds=WEEK_S + 1), key=KEY, max_age_s=WEEK_S)
 
 
 # ------------------------------------------------------------------ http: the shell behind the check
 
 
-def test_I1_no_shell_content_without_a_valid_session_of_an_allowed_account(clock: Clock) -> None:
+def test_I1_no_shell_content_without_a_valid_session(clock: Clock) -> None:
     config = make_config()
     client = client_for(config, clock)
 
@@ -162,6 +147,13 @@ def test_I1_no_shell_content_without_a_valid_session_of_an_allowed_account(clock
     shell_body = shell.text
     assert shell_body.strip()
     client.cookies.clear()
+
+    # A session of another account, any email, gets the same shell: there is no list of allowed accounts.
+    stranger = client_for(config, clock)
+    stranger.cookies.set("mm_session", session_value(email="stranger@example.com"))
+    other = stranger.get("/")
+    assert other.status_code == 200
+    assert other.text == shell_body
 
     login = client.get("/auth/login")
     login_value = login.cookies.get("mm_login")
@@ -174,13 +166,6 @@ def test_I1_no_shell_content_without_a_valid_session_of_an_allowed_account(clock
         ("forged", forge(good), config, T0),
         ("other key", session_value(key="another-key"), config, T0),
         ("expired by one second", good, config, T0 + timedelta(seconds=WEEK_S + 1)),
-        ("account not allowed", session_value(email="stranger@example.com"), config, T0),
-        (
-            "allowed when signed in, removed from ALLOWED_EMAILS since",
-            good,
-            make_config(frozenset({"someone-else@example.com"})),
-            T0,
-        ),
         ("mm_login value as mm_session", login_value, config, T0),
         ("empty cookie", "", config, T0),
     ]
@@ -221,14 +206,6 @@ def test_root_with_forged_or_expired_session_redirects_to_login(clock: Clock) ->
     resp = late.get("/")
     assert resp.status_code == 302
     assert location_path(resp) == "/auth/login"
-
-
-def test_root_with_session_of_account_not_allowed_is_403_with_placeholder_text(clock: Clock) -> None:
-    client = client_for(make_config(), clock)
-    client.cookies.set("mm_session", session_value(email="stranger@example.com"))
-    resp = client.get("/")
-    assert resp.status_code == 403
-    assert FORBIDDEN_TEXT in resp.text
 
 
 def test_root_with_valid_session_serves_shell_with_no_cache(clock: Clock) -> None:

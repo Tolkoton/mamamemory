@@ -12,6 +12,7 @@ from typing import Any
 
 EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 TIMEZONE_URL = "https://www.googleapis.com/calendar/v3/users/me/settings/timezone"
+TASKS_URL = "https://tasks.googleapis.com/tasks/v1/lists/@default/tasks"
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,12 @@ class Event:
     id: str
     start: datetime
     end: datetime
+
+
+@dataclass(frozen=True)
+class TaskItem:
+    id: str
+    title: str
 
 
 class DeadlinePassed(Exception):
@@ -76,6 +83,30 @@ class GoogleWork:
         if response.status_code == 409:
             return event_id
         return str(response.json().get("id", event_id))
+
+    def list_open_tasks(self) -> list[TaskItem]:
+        """Відкриті задачі списку `@default` (усі сторінки), без порожніх назв і підзадач."""
+        params: dict[str, str] = {"showCompleted": "false", "showHidden": "false"}
+        items: list[dict[str, Any]] = []
+        while True:
+            page = self._call("GET", TASKS_URL, params=params).json()
+            items += page.get("items", [])
+            if not page.get("nextPageToken"):
+                break
+            params = params | {"pageToken": page["nextPageToken"]}
+        return [
+            TaskItem(str(item["id"]), str(item["title"]).strip())
+            for item in items
+            if str(item.get("title") or "").strip() and not item.get("parent")
+        ]
+
+    def insert_task(self, title: str) -> str:
+        """Нова задача в `@default` лише з назвою (ADR-0002); без повторів."""
+        return str(self._call("POST", TASKS_URL, json={"title": title}).json()["id"])
+
+    def complete_task(self, task_id: str) -> None:
+        """Закрити задачу; 404 — її вже нема, не помилка."""
+        self._call("PATCH", f"{TASKS_URL}/{task_id}", json={"status": "completed"}, allow=(404,))
 
     def _call(self, method: str, url: str, *, allow: tuple[int, ...] = (), **kwargs: Any) -> Any:
         if self._now() >= self._deadline:

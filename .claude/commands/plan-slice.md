@@ -192,13 +192,23 @@ NO round history. This catches what the round-anchored critic drifted past
   it, append an AUTONOMOUS entry to `.engine/overseer/escalations.md` (both
   objections, both fixes, cost-to-reverse), spawn a third fresh cold-reader, and on
   its `CRITIC_PASS` write and seal the contract yourself — no question, no card in
-  `tasks/blocked/`. Only a third `CRITIC_REVISE` is a loop that cannot converge:
+  `tasks/blocked/` — in a project whose stage is `internal` (the default). In a
+  project at stage `production` the same answers end in a card for the owner
+  instead of the seal (board 207, `.claude/references/project-stage.md`): the
+  script below decides, never you. Only a third objection you resolved yourself (a `CRITIC_REVISE`
+  or a two-way `CRITIC_ESCALATE`) is a loop that cannot converge:
   park it (`board.py open-item --to blocked`, the three objections) and emit
   OVERSEER_SLICE_AWAITING_OWNER.
-- `CRITIC_PREMISE_PROBE_REQUIRED` / `CRITIC_ESCALATE` → route as above before
-  writing: `PRODUCT_DECISION`, a threshold or a one-way door goes to the owner
-  (attended `AskUserQuestion`, unattended a park); any other category is a two-way
-  door — take the critic's recommendation, log it AUTONOMOUS, continue.
+- Keep the cold-reader's answers in order. After each, `python3 .claude/hooks/stage.py
+  route <the answers so far>` (e.g. `REVISE REVISE`) prints `rerun`, `seal`, `park` or
+  `owner` — do what it says. A `CRITIC_ESCALATE` is written `ESCALATE:<its category>`
+  (e.g. `REVISE ESCALATE:DESIGN_FORK`); a one-way door of any category, `ESCALATE:ONE_WAY`.
+- `CRITIC_ESCALATE` → the script routes it by category (proposal 1787):
+  `PRODUCT_DECISION`, `THRESHOLD`, `ONE_WAY`, or a category it cannot read → `owner`
+  (attended `AskUserQuestion`, unattended a park; never decided by you); any other
+  category is a two-way door → `rerun`: take the critic's recommendation, log it
+  AUTONOMOUS, spawn a new fresh cold-reader.
+- `CRITIC_PREMISE_PROBE_REQUIRED` → route as in the loop above before writing.
 
 ---
 
@@ -272,7 +282,11 @@ its reason. Fix what it names — in the artifact, through the critic, not aroun
 hand-in is later held to these numbers: one test named `test_I<n>_…` for each.
 
 **Seal the contract** — the critic has passed it and it is written, so record what was approved:
-`python3 .claude/hooks/contract_fingerprint.py seal .engine/slices/$ARGUMENTS.md`. The
+`python3 .claude/hooks/stage.py seal $ARGUMENTS <the cold-reader's answers in order>` (e.g.
+`REVISE REVISE PASS`). It seals through `contract_fingerprint.py seal`, except in a project at stage
+`production` after a REVISE: then it writes the owner's card in `tasks/blocked/` with the
+`reseal-contract` line instead and prints `NOT SEALED` — mark the slice `CONTRACT PARKED — owner review`
+in `.engine/PROGRESS.md` and take the next slice the DAG lets start. The
 fingerprint goes to `.claude/state/contracts/$ARGUMENTS.sha256` (machine state, never
 committed). It refuses to overwrite an existing one: if this is a re-plan of a slug that was
 already sealed, that refusal is the owner's gate — do not write or delete the fingerprint

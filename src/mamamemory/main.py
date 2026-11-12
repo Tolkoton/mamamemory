@@ -6,15 +6,18 @@ from typing import Any
 
 from google import genai
 from google.auth.transport.requests import AuthorizedSession
-from google.cloud import firestore
+from google.cloud import firestore, texttospeech
+from google.cloud.storage import Client as StorageClient
 
 from mamamemory.access import Session
 from mamamemory.config import Config, load_config
 from mamamemory.http.app import create_app
 from mamamemory.integrations.ai import AI
+from mamamemory.integrations.files import Files
 from mamamemory.integrations.google_auth import GoogleAuth
 from mamamemory.integrations.google_work import GoogleWork
 from mamamemory.integrations.store import FirestoreStore
+from mamamemory.integrations.tts import Speaker
 
 
 def _now() -> datetime:
@@ -44,4 +47,14 @@ app = create_app(
     _now,
     ai=AI(lambda: _genai_client(config), config),
     calendar=_calendar(config),
+    files=Files(
+        lambda: StorageClient(project=config.gcp_project),
+        config.files_bucket,
+        call_timeout_s=config.call_timeout_s,
+    ),
+    speaker=Speaker(
+        lambda **options: texttospeech.TextToSpeechClient(**options),
+        endpoint=config.tts_endpoint,
+        call_timeout_s=config.call_timeout_s,
+    ),
 )

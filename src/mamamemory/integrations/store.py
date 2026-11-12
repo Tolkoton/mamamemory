@@ -21,6 +21,14 @@ def document_path(account_id: str, path: str) -> str:
     return "/".join([ROOT, account_id, *segments])
 
 
+def collection_path(account_id: str, collection: str) -> str:
+    """`accounts/{account_id}/{collection}` — колекція одного сегмента під акаунтом."""
+    _check_account_id(account_id)
+    if not collection or "/" in collection or collection in (".", ".."):
+        raise ValueError(f"collection must be one segment: {collection!r}")
+    return f"{ROOT}/{account_id}/{collection}"
+
+
 def _check_account_id(account_id: str) -> None:
     if account_id in ("", ".", "..") or "/" in account_id:
         raise ValueError(f"bad account_id: {account_id!r}")
@@ -71,6 +79,15 @@ class FirestoreStore:
         result: dict[str, Any] | None = run(self._client.transaction())
         return result
 
+    def delete(self, account_id: str, path: str) -> None:
+        """Прибрати документ (clarify); немає — нічого."""
+        self._client.document(document_path(account_id, path)).delete()
+
+    def list(self, account_id: str, collection: str) -> list[tuple[str, dict[str, Any]]]:
+        """Усі документи колекції під акаунтом (F3): `(id, дані)`."""
+        reference = self._client.collection(collection_path(account_id, collection))
+        return [(snapshot.id, snapshot.to_dict()) for snapshot in reference.stream()]
+
 
 class InMemoryStore:
     """Фейк для тестів; шлях — через ту саму `document_path`."""
@@ -92,6 +109,17 @@ class InMemoryStore:
         if written is not None:
             self._documents[full] = dict(written)
         return written
+
+    def delete(self, account_id: str, path: str) -> None:
+        self._documents.pop(document_path(account_id, path), None)
+
+    def list(self, account_id: str, collection: str) -> list[tuple[str, dict[str, Any]]]:
+        prefix = collection_path(account_id, collection) + "/"
+        return [
+            (full[len(prefix) :], dict(data))
+            for full, data in sorted(self._documents.items())
+            if full.startswith(prefix) and "/" not in full[len(prefix) :]
+        ]
 
 
 Store = FirestoreStore | InMemoryStore

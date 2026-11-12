@@ -6,11 +6,34 @@
   <title>Мамина пам'ять</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#2f6b4f">
+  <style>
+    body { font-family: system-ui, sans-serif; font-size: 22px; margin: 0; padding: 16px; background: #fbfaf7; color: #1d1d1d; }
+    h1 { font-size: 26px; margin: 0 0 12px; color: #2f6b4f; }
+    #conversation p { background: #eef4f0; border-radius: 12px; padding: 12px; margin: 8px 0; }
+    #conversation button { font-size: 22px; padding: 10px 28px; border-radius: 12px; border: 0; background: #2f6b4f; color: #fff; }
+    #draft { font-size: 24px; min-height: 1.5em; }
+    #status { color: #555; min-height: 1.4em; }
+    .controls { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; margin-top: 16px; }
+    .controls button { width: 96px; height: 96px; border-radius: 50%; font-size: 44px; border: 0; background: #2f6b4f; color: #fff; }
+    .controls button:disabled { background: #c9cfcb; }
+    #mic.recording { background: #c0392b; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 50% { transform: scale(1.08); } }
+  </style>
 </head>
 <body>
   <main id="mamamemory-shell">
     <h1>Мамина пам'ять</h1>
     <section id="conversation" aria-live="polite"></section>
+    <p id="draft" aria-live="polite"></p>
+    <p id="status" aria-live="polite"></p>
+    <div class="controls">
+      <button id="mic" aria-label="Говорити">🎤</button>
+      <button id="send" aria-label="Надіслати">➤</button>
+      <button id="photo" aria-label="Фото">📷</button>
+      <button id="add" aria-label="Додати файл">＋</button>
+    </div>
+    <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+    <input id="add-input" type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain" hidden>
   </main>
   <script type="module" src="/app.js"></script>
 </body>

@@ -28,7 +28,7 @@ BERLIN = ZoneInfo("Europe/Berlin")
 # Monday 9 November 2026, 10:07 in Berlin (CET, UTC+1).
 NOW = datetime(2026, 11, 9, 9, 7, 0, tzinfo=UTC)
 TITLE = "подзвонити нотаріусу"
-ASK_DURATION = "Скільки часу це займе?"
+ASK_DURATION = f"Скільки часу займе «{TITLE}»?"
 WRITTEN = "Записала в календар."
 NOT_ACTUAL = "Це питання вже не актуальне."
 NO_FREE_TIME = "Не знайшла вільного часу цього тижня."
@@ -36,7 +36,6 @@ NO_FREE_TIME = "Не знайшла вільного часу цього тиж�
 
 def make_config() -> Config:
     return Config(
-        allowed_emails=frozenset({"mama@example.com"}),
         gcp_project="pocket-lawyer-431614",
         firestore_database="mamamemory",
         vertex_location="eu",
@@ -251,10 +250,15 @@ def test_answer_duration_shows_plan() -> None:
 
 
 def test_answer_to_old_duration_question_is_not_actual_and_keeps_current_draft() -> None:
+    # The newer task starts a new draft only after the old plan is written (several-tasks Seam:
+    # a draft still asking or shown takes new tasks in); the old duration question then is stale.
     w = world(duration_min=None)
     old = w.start("перша задача").question
+    assert old is not None
+    plan_id, fingerprint = shown(w.answer(old.id))
+    assert w.confirm(plan_id, fingerprint).text == WRITTEN
     new = w.start("друга задача").question
-    assert old is not None and new is not None
+    assert new is not None and new.id != old.id
     stale = w.answer(old.id)
     assert stale.text == NOT_ACTUAL
     assert stale.plan is None
