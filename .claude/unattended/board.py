@@ -61,7 +61,9 @@ exception reads only: `review` takes the board from the work branch in origin (b
                                      `name<TAB>action<TAB>argument<TAB>sha256` line each
     board.py action-line <action> [<slug>]
                                      the line an agent writes under its question to offer the action
-                                     (`reseal-contract` names the slice: `.engine/slices/<slug>.md`)
+                                     (`reseal-contract` names the slice: `.engine/slices/<slug>.md`;
+                                     `seal-journey` the journeys' unit: index, interference, j-N;
+                                     `accept-walk` the walk card: j-N, `.engine/journeys/walks/j-N.md`)
     board.py maintain-task [--today YYYY-MM-DD]
                                      the runner's weekly call: put the maintenance task into todo/
                                      when it is due (see THE MAINTENANCE TASK); prints its path
@@ -130,7 +132,12 @@ contract changes. «так» is the change and the re-approval at once — no se
 fingerprint: the runner reseals through owner_action.py (contract_fingerprint.reseal) when the
 contract is still the text the owner saw, and the audit of the slice is no longer held. A contract
 that changed since is stale: nothing is sealed and the agent asks again. The one action whose line
-names its target besides the sha256; the `argument` of `owner-actions` is then `<slug> <sha256>`.
+names its target besides the sha256 — with `seal-journey` (board 208): `seal-journey <unit> <sha256>`,
+the owner's approval of a user journey (`.engine/journeys/`, a unit `index`, `interference` or `j-N`),
+its first seal or a seal again after a change; journeys.py seals it when it is the text of the
+question. So does `accept-walk j-N <sha256 of .engine/journeys/walks/j-N.md>` (board 412): the owner
+walked the journey on the phone; owner_walk.py appends the acceptance row when the card is the one
+asked and the journey has not changed since. The `argument` of `owner-actions` is then `<slug> <sha256>`.
 
 UPDATING DEPENDENCIES (board 076) is such an action too: `update-deps`, offered under the question
 that ends a `/maintain` task, with the sha256 of the list `.engine/maintain/updates.json` the owner
@@ -347,7 +354,8 @@ COUNT_WORDS = {2: "двох", 3: "трьох"}
 CONSENT = "так"  # the one form of the owner's consent (board 036): see `is_word`
 # What the runner may do on the owner's «так». `close-escalation` is offered by the gate's own
 # question (the `Ескалація gates:` line), the rest by an action line.
-OWNER_ACTIONS = ("apply-settings", "promote-rule", "amend-goals", "seal-goals", "update-deps", "reseal-contract", "close-escalation")
+OWNER_ACTIONS = ("apply-settings", "promote-rule", "amend-goals", "seal-goals", "update-deps", "reseal-contract", "seal-journey",
+                 "accept-walk", "close-escalation")
 RULE_ACTION, RULE_DECLINE, RULE_NO = "promote-rule", "reject-rule", "ні"  # «ні» under a rule question closes the proposal
 RULE = re.compile(r"^Пропозиція правила:\s*RP-(\w+)", re.MULTILINE)
 ACTION = re.compile(r"^[\s>*_-]*Дія (?:runner-а|виконавця):[ \t]*`?([a-z][a-z-]*)(?:[ \t]+(?![0-9a-f]{64}\b)([a-z0-9][a-z0-9._-]*))?"
@@ -355,6 +363,9 @@ ACTION = re.compile(r"^[\s>*_-]*Дія (?:runner-а|виконавця):[ \t]*`?
 DEPS_ACTION, DEPS_RESULT = "update-deps", ".engine/maintain/update-result.md"
 SEAL_ACTION = "seal-goals"  # the first seal on the goals document (board 787)
 RESEAL_ACTION, SLICES = "reseal-contract", ".engine/slices"  # a sealed slice contract approved again (board 308)
+JOURNEY_ACTION, JOURNEYS = "seal-journey", ".engine/journeys"  # a user journey approved, first or again (board 208)
+WALK_ACTION, WALKS = "accept-walk", ".engine/journeys/walks"  # the owner walked a journey on the phone (board 412)
+TARGETED = (RESEAL_ACTION, JOURNEY_ACTION, WALK_ACTION)  # the actions whose line names a target besides the sha256
 ACTION_FILES = {"apply-settings": "docs/tasks/settings.json", "amend-goals": ".engine/goals/proposed.md",
                 SEAL_ACTION: ".engine/goals.md", DEPS_ACTION: ".engine/maintain/updates.json"}  # the file whose sha256 the offer names
 MAINTAIN_NAME = re.compile(r"^\d{3,}-maintain-(\d{4}-\d\d-\d\d)(?:\.md)?$")
@@ -363,7 +374,7 @@ ARCHITECT_NAME = re.compile(r"^\d{3,}-master-architect(?:\.md)?$")
 CLEANUP_NAME = re.compile(r"^\d{3,}-cleanup-(\d{4}-\d\d-\d\d)(?:\.md)?$")
 CLEANUP_SCRIPT, CLEANUP_DAYS = ".claude/hooks/simplifier.py", 1
 ITEM = re.compile(r"^Відкритий пункт:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
-OFFERS = {*ACTION_FILES, RULE_ACTION, RESEAL_ACTION}  # what an action line may offer; the rule's sha256 is of its id and text
+OFFERS = {*ACTION_FILES, RULE_ACTION, *TARGETED}  # what an action line may offer; the rule's sha256 is of its id and text
 EXIT_REFUSED, EXIT_TODO_EMPTY, EXIT_NONE_ELIGIBLE, EXIT_EXTRA_WAIT = 2, 3, 4, 5
 
 
@@ -464,7 +475,7 @@ def parse(text: str) -> Task:
         outside = text[: section.start()] + (rest[following.start():] if following else "")
     rule = RULE.search(header)
     klass, class_error = _class_line(header)
-    offers = [m for m in ACTION.finditer(questions) if m.group(1) in OFFERS and bool(m.group(2)) == (m.group(1) == RESEAL_ACTION)]
+    offers = [m for m in ACTION.finditer(questions) if m.group(1) in OFFERS and bool(m.group(2)) == (m.group(1) in TARGETED)]
     return Task(
         action=offers[-1].group(1) if offers else "",
         action_arg=" ".join(filter(None, offers[-1].group(2, 3))) if offers else "",
@@ -1279,9 +1290,22 @@ def owner_actions(board: Board) -> list[str]:
 
 def action_line(root: Path, action: str, slug: str = "") -> str:
     """The offer an agent writes under its question: the action and the sha256 of what it applies."""
-    if action == RESEAL_ACTION:
-        return f"Дія runner-а: {action} {slug} {hashlib.sha256((root / SLICES / f'{slug}.md').read_bytes()).hexdigest()}"
+    if action in TARGETED:
+        return f"Дія runner-а: {action} {slug} {hashlib.sha256((root / target_file(root, action, slug)).read_bytes()).hexdigest()}"
     return f"Дія runner-а: {action} {hashlib.sha256((root / ACTION_FILES[action]).read_bytes()).hexdigest()}"
+
+
+def target_file(root: Path, action: str, slug: str) -> str:
+    """The file a targeted action applies: the slice contract, or the journeys' unit (`index`, `interference`, `j-N`)."""
+    if action == RESEAL_ACTION:
+        return f"{SLICES}/{slug}.md"
+    if action == WALK_ACTION:
+        return f"{WALKS}/{slug}.md"
+    if slug in ("index", "interference"):
+        return f"{JOURNEYS}/{'INDEX' if slug == 'index' else slug}.md"
+    named = re.fullmatch(r"j-(\d+)", slug)
+    found = sorted((root / JOURNEYS).glob(f"J-{named[1]}-*.md")) if named else []
+    return f"{JOURNEYS}/{found[0].name}" if len(found) == 1 else f"{JOURNEYS}/J-{slug}-?.md"
 
 
 def action_task(board: Board, name: str) -> Path | None:
@@ -1310,6 +1334,14 @@ RULE_OUTCOMES = {
     (SEAL_ACTION, "failed"): "Дію не виконано ({now}, runner): {action} — документ цілей не запечатано: у ньому немає жодного нумерованого рядка, номер "
                              "ужито двічі, або документ уже затверджували і відтоді змінили — тоді це поправка, `amend-goals` (журнал на сервері: "
                              ".claude/state/board/logs/owner-action.log). Агентові: виправ і спитай знову.",
+    (JOURNEY_ACTION, "applied"): "Дія виконано ({now}, runner): {action} — за відповіддю власника «так» journey запечатано таким, як він був у "
+                                 "запитанні: він чинний; функції, що цитували змінений критерій, — у `.engine/journeys/to-review.md`. "
+                                 "Агентові: переконайся (`journeys.py status`) і працюй далі.",
+    (JOURNEY_ACTION, "failed"): "Дію не виконано ({now}, runner): {action} — journey не запечатано: `journeys.py check` його не пропускає, або зміна "
+                                "прибрала чи повторно вжила номер AC (журнал на сервері: .claude/state/board/logs/owner-action.log). "
+                                "Агентові: виправ і спитай знову.",
+    (WALK_ACTION, "applied"): "Дію виконано ({now}, runner): {action} — за відповіддю власника «так» прохід прийнято: рядок у "
+                              "`.engine/journeys/acceptance.md` (commit runner-а). Агентові: переконайся (`owner_walk.py gate <наступна функція>`) і працюй далі.",
     (RESEAL_ACTION, "applied"): "Дію виконано ({now}, runner): {action} — за відповіддю власника «так» slice contract запечатано заново таким, "
                                 "як він був у запитанні: зміна затверджена, audit slice-а більше не тримається. Агентові: переконайся "
                                 "(`contract_fingerprint.py check <контракт>`) і працюй далі за ним.",
@@ -1823,8 +1855,9 @@ def main() -> int:
     commands.add_parser("gate-reject").add_argument("name")
     commands.add_parser("owner-actions")
     action_line_parser = commands.add_parser("action-line")
-    action_line_parser.add_argument("action", choices=sorted({*ACTION_FILES, RESEAL_ACTION}))
-    action_line_parser.add_argument("slug", nargs="?", default="", help="reseal-contract: the slice, .engine/slices/<slug>.md")
+    action_line_parser.add_argument("action", choices=sorted({*ACTION_FILES, *TARGETED}))
+    action_line_parser.add_argument("slug", nargs="?", default="",
+                                    help="reseal-contract: the slice, .engine/slices/<slug>.md; seal-journey: the unit (index, interference, j-N)")
     commands.add_parser("architect-task")
     commands.add_parser("maintain-task").add_argument("--today", default=os.environ.get("BOARD_TODAY") or None, help="YYYY-MM-DD (default: today, UTC)")
     commands.add_parser("cleanup-task").add_argument("--today", default=os.environ.get("BOARD_TODAY") or None, help="YYYY-MM-DD (default: today, UTC)")
@@ -1923,10 +1956,11 @@ def main() -> int:
             print(line)
         return 0
     if args.command == "action-line":
-        if (args.action == RESEAL_ACTION) != bool(args.slug) or (args.slug and not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", args.slug)):
-            print(f"board: `action-line {RESEAL_ACTION} <slug>` names the slice, and only it takes one", file=sys.stderr)
+        if (args.action in TARGETED) != bool(args.slug) or (args.slug and not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", args.slug)):
+            print(f"board: `action-line {RESEAL_ACTION} <slug>` names the slice, `action-line {JOURNEY_ACTION} <unit>` the journey, "
+                  f"`action-line {WALK_ACTION} j-N` the walk card; only they take one", file=sys.stderr)
             return EXIT_REFUSED
-        offered = f"{SLICES}/{args.slug}.md" if args.slug else ACTION_FILES[args.action]
+        offered = target_file(root, args.action, args.slug) if args.slug else ACTION_FILES[args.action]
         if not (root / offered).is_file():
             print(f"board: {offered} is missing; there is nothing to offer", file=sys.stderr)
             return EXIT_REFUSED

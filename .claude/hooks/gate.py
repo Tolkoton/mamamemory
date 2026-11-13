@@ -152,6 +152,7 @@ SCOPE_KEYS = {
     "DELETE_GUARD_LINES": "it decides how much untested code may be deleted unseen",
     "PUSH_PROTECTED_BRANCHES": "it decides which branches block-dangerous.sh refuses a push into",
 }
+CONVERSATION_PATHS = (".engine/architecture/conversation-model.", "tests/conversations/")   # board 209
 CONFIG_BASENAMES = ("ruff.toml", ".ruff.toml", "mypy.ini", ".mypy.ini")
 SKIP_NAMES = {
     "pytest.mark.skip": "skip",
@@ -705,6 +706,34 @@ def delete_guard(root: Path, layer: str, diff_ref: str | None, env: dict[str, st
         if finding.severity == "block":
             where = f"{finding.file}:{finding.line}" if finding.line else str(finding.file)
             report.reasons.append(f"DELETE GUARD {where} [{finding.rule}] {finding.message}. {finding.hint}")
+
+
+def conversation_module() -> Any:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import conversation
+
+    return conversation
+
+
+def conversation_guard(root: Path, report: Report) -> None:
+    """A conversational product's model and its code agree (board 209, conversation.py check): the
+    router's intent enum and the kinds of reply_to are the model's sets, and the model keeps its own
+    rules. Needs no tooling; silent where there is no model and no router key — and then it does not
+    even load conversation.py, so a gate without it still runs for a product that does not talk."""
+    env = load_env(root)
+    if not (root / ".engine/architecture/conversation-model.json").is_file() and not any(
+            env.get(key, "").strip() for key in ("CONVERSATION_INTENTS", "CONVERSATION_REPLY_KINDS")):
+        return
+    module = conversation_module()
+    code, errors = module.all_errors(root)
+    if code != module.EXIT_FOUND:
+        return
+    for message in errors[:20]:
+        report.add(Finding(module.MODEL_REL, None, "conversation", "block", message,
+                           "change the model first, then the code (python3 .claude/hooks/conversation.py check)"))
+    listed = "\n".join(f"  {message}" for message in errors[:20])
+    report.reasons.append(f"CONVERSATION MODEL — the model breaks its rules or the code disagrees with it "
+                          f"(python3 .claude/hooks/conversation.py check):\n{listed}")
 
 
 def protected_guard_module() -> Any:
@@ -1725,9 +1754,14 @@ def layer_checks(root: Path, env: dict[str, str], layer: str, files: list[str],
     # A configuration file is not code, but changing the gate's own settings is exactly what
     # the guard exists to see; so a config-only turn still reaches the guard.
     # Nor is a file that is gone: a turn that only deletes code still reaches the delete guard.
-    if (layer == "stop" and not code and not any(is_config_file(f) for f in files)
+    # The conversation model is not code either, but a change of it alone must still meet the check.
+    talked = any(f.startswith(CONVERSATION_PATHS) for f in files)
+    if (layer == "stop" and not code and not talked and not any(is_config_file(f) for f in files)
             and not deleted_code(root, layer, diff_ref, env, own)):
         return
+    started = time.perf_counter()
+    conversation_guard(root, report)
+    report.steps_ms["conversation"] = int((time.perf_counter() - started) * 1000)
     started = time.perf_counter()
     if layer in ("stop", "pre_commit"):
         bypass_guard(root, layer, files, diff_ref, report)

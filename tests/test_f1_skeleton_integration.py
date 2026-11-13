@@ -288,46 +288,41 @@ def test_S2_to_S3_recognised_text_goes_as_request_two_with_its_reply_to() -> Non
 
 
 def test_S3_to_S4_open_question_is_built_from_the_plan_draft() -> None:
+    # Superseded by calm-open (Seam): the open does not read the plan draft — no plan reply,
+    # no «увійди знову», `login_needed` always False, the draft unchanged;
+    # the plan is shown only in reply to mama's message.
     f1 = F1App()
     a = f1.sign_in("A")
     f1.guide_seen(SUB_A)
-    assert f1.open(a)["replies"] == [], "no draft: nothing"
+    first = f1.open(a)
+    assert first["replies"] == [] and first["login_needed"] is False, first
 
     plan = f1.message(a, TRACER)["plan"]
-    assert plan is not None
+    assert plan is not None and plan["title"] == TITLE
+    mark, built = len(f1.store.touched), len(f1.built)
     opened = f1.open(a)
+    assert opened["replies"] == [], "the open shows no plan reply"
     assert opened["login_needed"] is False
-    [reply] = opened["replies"]
-    shown = reply["plan"]
-    assert (shown["plan_id"], shown["fingerprint"], shown["title"]) == (
-        plan["plan_id"],
-        plan["fingerprint"],
-        TITLE,
-    )
-    assert (instant(shown["start"]), instant(shown["end"])) == (instant(plan["start"]), instant(plan["end"]))
-    assert reply["question"] == plan_question(shown)
-    assert f1.calendars[SUB_A].insert_calls == [], "the open question writes nothing into Calendar"
-
-    # The calendar changed under the shown plan: the open recomputes it with a new fingerprint.
-    f1.calendars[SUB_A].busy(instant(plan["start"]), instant(plan["end"]))
-    [moved] = f1.open(a)["replies"]
-    new = moved["plan"]
-    assert new is not None and new["fingerprint"] != plan["fingerprint"], moved
-    assert instant(new["start"]) >= instant(plan["end"]), new
-    assert moved["question"] == plan_question(new)
+    assert [op for op, _ in f1.store.touched[mark:] if op != "get"] == [], "the open changes no plan draft"
+    assert len(f1.built) == built, "the open does not reach the calendar"
     assert f1.calendars[SUB_A].insert_calls == []
-    done = confirm(a, new)
+
+    # The draft the open left alone still answers «так» for the plan the message showed.
+    done = confirm(a, plan)
     assert done.json()["text"] == WRITTEN, done.text
     [event] = f1.calendars[SUB_A].created
-    assert (event.start, event.end) == (instant(new["start"]), instant(new["end"]))
-    assert f1.open(a)["replies"] == [], "a written plan is not an open question"
+    assert (event.start, event.end) == (instant(plan["start"]), instant(plan["end"]))
+    assert f1.open(a)["replies"] == []
 
-    # A shown plan whose Google sign-in ran out: «увійди знову».
+    # A shown plan whose Google sign-in ran out: the open does not ask to sign in again.
     assert f1.message(a, TRACER, message_id="m3")["plan"] is not None
     f1.google.expired.add(SUB_A)
-    expired = f1.open(a)
-    assert expired["login_needed"] is True
-    assert [r["text"] for r in expired["replies"]] == [SIGN_IN_AGAIN]
+    resp = a.get("/api/open")
+    assert resp.status_code == 200, resp.text
+    expired = resp.json()
+    assert expired["login_needed"] is False
+    assert expired["replies"] == []
+    assert SIGN_IN_AGAIN not in resp.text
     assert len(f1.calendars[SUB_A].created) == 1
 
 
@@ -382,7 +377,11 @@ def test_AC1_install_from_chrome_and_any_google_account_signs_in_and_sees_only_i
     assert TITLE not in refused.text
     assert outside(SUB_B, f1.store.touched[mark:]) == []
     assert f1.calendars[SUB_A].created == [] and f1.calendars[SUB_B].created == []
-    assert [r["plan"]["plan_id"] for r in f1.open(a)["replies"]] == [plan["plan_id"]]
+    # Superseded by calm-open (Seam): the open shows no plan to anyone; A's own plan stays A's to confirm.
+    assert f1.open(a)["replies"] == []
+    assert confirm(a, plan).json()["text"] == WRITTEN
+    assert [e.title for e in f1.calendars[SUB_A].created] == [TITLE]
+    assert f1.calendars[SUB_B].created == []
 
 
 def test_AC2_voice_shows_the_recognised_text_and_sending_it_again_plans() -> None:
@@ -440,6 +439,8 @@ def test_AC3_proposed_time_one_duration_question_yes_writes_once() -> None:
 
 
 def test_AC4_closed_midway_the_next_open_shows_the_unclosed_plan() -> None:
+    # Superseded by calm-open (Seam, I1): AC4 of f1-skeleton is withdrawn — the next open shows no plan and
+    # does not change the draft; the unclosed plan returns in reply to mama's message.
     f1 = F1App(duration_min=None)
     a = f1.sign_in("A")
     f1.guide_seen(SUB_A)
@@ -450,17 +451,19 @@ def test_AC4_closed_midway_the_next_open_shows_the_unclosed_plan() -> None:
     assert asked is not None and asked["kind"] == "duration"
     reopened = f1.browser()  # the app was closed: a new page with the same session
     reopened.cookies.set("mm_session", cookie)
-    [pending] = f1.open(reopened)["replies"]
-    assert pending["question"] == asked and pending["text"] == ASK_DURATION, pending
+    mark = len(f1.store.touched)
+    opened = f1.open(reopened)
+    assert opened["replies"] == [] and opened["login_needed"] is False, opened
+    assert [op for op, _ in f1.store.touched[mark:] if op != "get"] == [], "the open changes no plan draft"
 
-    plan = f1.message(reopened, HALF_HOUR, pending["question"], "m2")["plan"]
-    assert plan is not None
+    plan = f1.message(reopened, HALF_HOUR, asked, "m2")["plan"]
+    assert plan is not None and plan["title"] == TITLE
     again = f1.browser()
     again.cookies.set("mm_session", cookie)
-    [unclosed] = f1.open(again)["replies"]
-    assert unclosed["plan"]["plan_id"] == plan["plan_id"], unclosed
-    assert unclosed["question"] == plan_question(unclosed["plan"])
-    assert confirm(again, unclosed["plan"]).json()["text"] == WRITTEN
+    mark = len(f1.store.touched)
+    assert f1.open(again)["replies"] == []
+    assert [op for op, _ in f1.store.touched[mark:] if op != "get"] == []
+    assert confirm(again, plan).json()["text"] == WRITTEN
     assert [e.title for e in f1.calendars[SUB_A].created] == [TITLE]
 
 

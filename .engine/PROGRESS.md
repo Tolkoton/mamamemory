@@ -198,3 +198,96 @@
 - Surprises: нова підказка зсунула «лікар о десятій у середу» під планом у `yes` (3 з 4 прогонів) — опис `yes` уточнено
   («лише згода без змін; задача плану з часом — edit»).
 - Open: відповідь «Записала: …..» з подвійною крапкою, коли фраза кінчається крапкою (Q1, буквальне читання контракту).
+
+## Slice speak-control (DONE — DEPLOYED rev mamamemory-00026-89f, 2026-11-12)
+
+- Owner's word 2026-11-12: 🔊 зупиняється (⏹), межу 1 500 прибрано. `web/speak_button.js` (стан кнопки), `player.js`
+  і `speak.js` з `AbortSignal`, `tts.parts` без обрізання, рядок журналу `SpeakTooLong`.
+- Tests: 21 контрактний (tester; Q1–Q4 — `taken`); supersede 7 тестів read-aloud; 728 pytest + 60 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-12-mamamemory-speak-control-deploy.md`): smoke_read_aloud, smoke_access_shell,
+  smoke_f5_deployed — `SMOKE PASSED`; `/speak_button.js` → 302 на вхід. Разом викладено F4 S1 working-on.
+- Open: перемикач 🔊 → ⏹ → 🔊 на телефоні — прохід власника (картка 737).
+
+## Slice show-schedule (DONE — DEPLOYED rev mamamemory-00027-xnr, 2026-11-12)
+
+- Owner's word 2026-11-12: «які плани на тиждень» дало випадкові задачі з Google Tasks. Тепер намір `schedule` →
+  `planning/schedule.py` (`period`, `show`) і `GoogleWork.list_agenda`: події календаря за сьогодні / завтра / цей
+  / наступний тиждень, по днях; «сплануй тиждень» — як було.
+- Tests: 34 контрактні (tester; Q1–Q5 — `taken`); supersede по одному тесту add-or-plan і clarify; 762 pytest + 60 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-12-mamamemory-schedule-deploy.md`): `smoke_schedule.py` 7/7 і 11 smoke мови —
+  `SMOKE PASSED`; викладка, smoke_access_shell — `SMOKE PASSED`.
+- Open: прохід власника на телефоні — картка 742.
+
+## Slice one-add-button (DONE — DEPLOYED rev mamamemory-00028-x77, 2026-11-12)
+
+- Owner's word 2026-11-12: одна кнопка «＋» замість 📷 і ＋ (Android — камера чи файли); гайд — «або ＋ (фото чи файл)».
+- Tests: 6 контрактних (tester, без питань); supersede GUIDE у `tests/guide_world.py`; 768 pytest + 60 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-12-mamamemory-one-add-button-deploy.md`): викладка, smoke_access_shell,
+  smoke_guide — `SMOKE PASSED`; рядок у картці 729 дописано.
+- Open: прохід власника на телефоні — картка 743.
+
+## Slice F4 S2 — work-recall (DONE — DEPLOYED rev mamamemory-00029-pgn, 2026-11-12)
+
+- Module: `cases/worklog.py` (`recent` — до 100 найновіших без межі часу, рядок `WorkLogOver100`; `answer` —
+  `answer_work` Flash-Lite з датою й часом у зоні календаря); намір `work_question` у маршрутизації.
+- Tests: 30 контрактних (tester; Q1–Q3 — `taken`); supersede тесту clarify; 798 pytest + 60 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-12-mamamemory-work-recall-deploy.md`): `smoke_work_recall.py` 9/9 і 12 smoke
+  мови — `SMOKE PASSED`; викладка, smoke_access_shell — `SMOKE PASSED`.
+- Surprises: модель звертається то на «ви», то на «ти» («ви працювали» / «ти працювала»).
+- Open: прохід власника — картка 744; період поза 100 найновішими — Deferred (тригер `WorkLogOver100`).
+
+## Slice F4 S3 — case-recall (DONE — DEPLOYED rev mamamemory-00030-q2l, 2026-11-12)
+
+- Module: `cases/recall.py` (`recall`: справа з каталогу — `classify_case`; відповідь `answer_case` Flash-Lite з опису,
+  матеріалів і записів журналу про справу); намір `recall`; гайд — 9 рядків.
+- Tests: 29 контрактних (tester; Q1–Q4 — `taken`); supersede гайду, one-add-button і clarify; 827 pytest + 60 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-12-mamamemory-case-recall-deploy-2.md`): `smoke_case_recall.py` тричі 8/8 і 13
+  smoke мови — `SMOKE PASSED`; викладка, smoke_access_shell — `SMOKE PASSED`.
+- Surprises: перший прогін — «що ми знаємо про пані Шмідт?» → «поки нічого не записано» (модель ставила found:false на
+  загальне питання); підказку уточнено. Імпорт `recall` перенесено в `assistant` (без `noqa`) до викладки.
+- Open: прохід власника — картка 746.
+
+## Slice F4 S4 — f4-measure (DONE 2026-11-12)
+
+- Звіт `docs/f4-measure.md`; P-ROUTE-F4, P-RECALL — `verified` з умовою; картка 747 («ви» чи «ти»).
+
+## F4 recall-worklog — код готовий і викладений, чекає проходу власника (744, 746); AC1–AC4 PROVISIONAL (2026-11-12)
+
+## Slice plans-not-questions (DONE — DEPLOYED rev mamamemory-00032-wsv, 2026-11-12)
+
+- Owner's word 2026-11-12 evening: «які в нас плани» давало старі питання плану тижня. `is_answer` у розборі важливості
+  й меж; `planning.dismiss_asking` (план тижня «питаю» під priorities/limits на `schedule`); `schedule.show` — і задачі
+  Google Tasks («Задачі без часу:»).
+- Tests: 20 контрактних (tester; Q1 — `taken`; objection: 2 тести `test_wrong`, виправлено tester); supersede 15 тестів
+  show-schedule; 872 pytest + 60 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-12-mamamemory-plans-not-questions-deploy.md`): `smoke_plans_not_questions.py`
+  12/12 і 14 smoke мови — `SMOKE PASSED`; викладка, smoke_access_shell — `SMOKE PASSED`.
+- Open: прохід власника — картка 748.
+- Regression after 00031 (overseer BLOCK): «третє поставте на час» → `is_answer: False`; `smoke_priorities.py` не читав
+  `is_answer`. Виправлено: підказка (будь-яка відповідь, зокрема «на час» — true; речення в кінці; приклад «спершу X, а Y
+  теж на час»), `smoke_priorities.py` тепер враховує `is_answer`, `smoke_plans_not_questions.py` — 14 фраз. Спроби 2–3
+  не викладено (порядок «світло» в order); швидка перевірка 5/5 + 2/2, повний набір 16/16 —
+  `~/sonko/done/2026-11-12-mamamemory-plans-not-questions-deploy-4.md`, ревізія `mamamemory-00032-wsv`.
+
+## Slice address-ti (DONE — DEPLOYED rev mamamemory-00033-pz7, 2026-11-13)
+
+- Owner's word 2026-11-13 (картка 747): «можна на ти». `cases.worklog.ADDRESS` — одне речення перед «Мама питає» в
+  підказках `answer_work` і `answer_case`.
+- Tests: 2 контрактні (tester, `tests/test_address_ti.py`); 874 pytest.
+- Smoke: Сонько (`~/sonko/done/2026-11-13-mamamemory-address-ti-deploy.md`): `smoke_address_ti.py` 12/12 (усі
+  відповіді «ти працювала», «у твоїх записах»), `smoke_work_recall.py`, `smoke_case_recall.py` — `SMOKE PASSED`;
+  викладка, smoke_access_shell — `SMOKE PASSED`.
+- Open: фіксовані тексти застосунку («Скажіть ім'я чи назву інакше.», питання планування, гайд) лишились на «ви» —
+  пропозиція власнику, картка 750.
+
+## Slice calm-open (DONE — DEPLOYED rev mamamemory-00034-xps, 2026-11-13)
+
+- Owner's word 2026-11-13 (скриншот): на вступі «Коли ви взагалі можете робити задачі?», чужі задачі «на сьогодні».
+  Вступ без планування (`open_questions` не кличе `planning.open_question`; знято AC4 f1-skeleton і «S3 → S4»);
+  кнопка «Що я вмію» (`GET /api/guide`, `web/help.js`, `renderText` не чіпає `reply_to`); задачі Google Tasks у
+  «які плани» — лише з `due` у періоді (`TaskItem.due`); `white-space: pre-line`.
+- Tests: 24 контрактні (tester); supersede 28 тестів (case-questions 8, guide 5, open-questions 7, time-limits 1,
+  plans-not-questions 4, skeleton-measure 3); 894 pytest + 64 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-13-mamamemory-calm-open-deploy.md`): 16 smoke мови — `SMOKE PASSED`; викладка,
+  smoke_access_shell — `SMOKE PASSED`; `/api/guide` без входу — 401.
+- Open: P-TASKS-DUE `unverified` — прохід власника, картка 751.

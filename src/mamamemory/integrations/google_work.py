@@ -7,11 +7,13 @@
 import base64
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 TIMEZONE_URL = "https://www.googleapis.com/calendar/v3/users/me/settings/timezone"
+UNTITLED = "(без назви)"
 TASKS_URL = "https://tasks.googleapis.com/tasks/v1/lists/@default/tasks"
 
 
@@ -23,9 +25,20 @@ class Event:
 
 
 @dataclass(frozen=True)
+class AgendaItem:
+    """Подія для показу (show-schedule): назва, початок (UTC; `None` — на весь день), день у зоні."""
+
+    title: str
+    start: datetime | None
+    day: date
+    all_day: bool
+
+
+@dataclass(frozen=True)
 class TaskItem:
     id: str
     title: str
+    due: date | None = None
 
 
 class DeadlinePassed(Exception):
@@ -65,6 +78,27 @@ class GoogleWork:
             params = params | {"pageToken": page["nextPageToken"]}
         return [_event(item) for item in items if _is_busy(item)]
 
+    def list_agenda(self, time_min: datetime, time_max: datetime) -> list[AgendaItem]:
+        """Усі події періоду для показу: без скасованих, на весь день теж, у порядку Calendar."""
+        params: dict[str, str] = {
+            "timeMin": _rfc3339(time_min),
+            "timeMax": _rfc3339(time_max),
+            "singleEvents": "true",
+            "orderBy": "startTime",
+        }
+        found: list[AgendaItem] = []
+        while True:
+            page = self._call("GET", EVENTS_URL, params=params).json()
+            zone = page.get("timeZone")
+            found += [
+                _agenda_item(item, zone)
+                for item in page.get("items", [])
+                if item.get("status") != "cancelled"
+            ]
+            if not page.get("nextPageToken"):
+                return found
+            params = params | {"pageToken": page["nextPageToken"]}
+
     def get_event(self, event_id: str) -> Event | None:
         response = self._call("GET", f"{EVENTS_URL}/{event_id}", allow=(404,))
         if response.status_code == 404:
@@ -95,7 +129,7 @@ class GoogleWork:
                 break
             params = params | {"pageToken": page["nextPageToken"]}
         return [
-            TaskItem(str(item["id"]), str(item["title"]).strip())
+            TaskItem(str(item["id"]), str(item["title"]).strip(), _due(item.get("due")))
             for item in items
             if str(item.get("title") or "").strip() and not item.get("parent")
         ]
@@ -130,8 +164,28 @@ def _event(item: dict[str, Any]) -> Event:
     return Event(str(item["id"]), _moment(item.get("start", {})), _moment(item.get("end", {})))
 
 
+def _agenda_item(item: dict[str, Any], zone: str | None) -> AgendaItem:
+    """Подія з часом — початок у UTC і день у зоні календаря; на весь день — її дата, без часу."""
+    title = str(item.get("summary") or UNTITLED)
+    when = item.get("start", {})
+    if "dateTime" not in when:
+        return AgendaItem(title, None, date.fromisoformat(when["date"]), True)
+    local = datetime.fromisoformat(when["dateTime"])
+    if zone:
+        local = local.astimezone(ZoneInfo(zone))
+    return AgendaItem(title, local.astimezone(UTC), local.date(), False)
+
+
 def _moment(when: dict[str, Any]) -> datetime:
     """Час події; скасована подія може прийти без часу — тоді найдавніший момент."""
     if "dateTime" not in when:
         return datetime.min.replace(tzinfo=UTC)
     return datetime.fromisoformat(when["dateTime"]).astimezone(UTC)
+
+
+def _due(value: object) -> date | None:
+    """Дата задачі з `due` Tasks API (RFC 3339, значуща лише дата — перші 10 символів); інакше `None`."""
+    try:
+        return date.fromisoformat(str(value)[:10]) if value else None
+    except ValueError:
+        return None

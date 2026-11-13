@@ -1,6 +1,7 @@
 """Smoke of slice add-or-plan with the real model: «додай задачу» against «сплануй тиждень».
 
-The route: three phrases → `new_task`, three → `plan_week`; the task parse of «сплануй тиждень» and
+The route: three → `new_task`, two → `plan_week`, «що в мене на цей тиждень?» → `schedule`;
+the task parse of «сплануй тиждень» and
 «що в мене на цей тиждень?» gives no task once the request itself is dropped.
 All 8 must pass (exit 1 otherwise). No Google sign-in, no Firestore.
 
@@ -25,7 +26,7 @@ ROUTES = [
     ("завтра о десятій до лікаря", "new_task"),
     ("сплануй тиждень", "plan_week"),
     ("давай планувати тиждень: ще подзвонити сестрі", "plan_week"),
-    ("що в мене на цей тиждень?", "plan_week"),
+    ("що в мене на цей тиждень?", "schedule"),
 ]
 EMPTY = ["сплануй тиждень", "що в мене на цей тиждень?"]
 

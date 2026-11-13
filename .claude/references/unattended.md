@@ -40,7 +40,9 @@ it to `tasks/blocked/` instead (`tasks/README.md`, rule 4).
 A sealed slice contract that must change is one question, not two (board 308): show the owner the
 change and put under it the line `python3 .claude/unattended/board.py action-line reseal-contract <slug>`
 prints. «так» is the change and the re-approval: the runner reseals the contract if it is still the text
-of the question; never write or delete the fingerprint yourself.
+of the question; never write or delete the fingerprint yourself. A user journey is approved the same way
+(board 208): the question shows the journey's sample dialog and screens, under it the line `board.py
+action-line seal-journey <unit>` prints (`index`, `j-N`, `interference`); a feature that waits for it is parked.
 
 For an ask-gated command: the exact command in `--what`, and the question is whether the owner
 runs it. `park-ask-gated.py` denies such a command unattended and hands you this instruction if

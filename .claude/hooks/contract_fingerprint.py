@@ -21,7 +21,16 @@ owner_action.py, which refuses inside a Claude Code session: the new fingerprint
 when the contract is still the text the owner saw. There is no command here for it — an agent
 neither writes nor deletes a fingerprint that exists.
 
-Exit status: 0 sealed / match; 3 fingerprint exists (seal) or contract changed (check);
+THE ACCEPTANCE CRITERIA ARE NOT THE AGENT'S (board 412; R4 §3.4). mamamemory's F2 was built in full on
+«Acceptance criteria (PROVISIONAL — owner ratification pending)»: product behaviour the agent invented.
+`seal` (and stage.py's, which /plan-slice runs) refuses a contract whose acceptance criteria — the
+section «Acceptance criteria» of the feature artifact that holds the slice, and of the contract itself
+when it has one — carry `PROVISIONAL` or `[NEEDS CLARIFICATION`, or have an item that cites neither a
+journey (`J-N#AC-k`), nor a line of the goals (G…, D…), nor the owner's words verbatim with their date
+(`2026-11-12 … «…»`), nor is marked technical (`[тех]`). PROVISIONAL stays for technical build parameters.
+
+Exit status: 0 sealed / match; 3 fingerprint exists (seal) or contract changed (check)
+or the acceptance criteria are not the owner's (seal);
 4 no fingerprint (check — a contract approved before this existed is audited as before);
 2 usage or a missing contract. Machine state only; nothing under .engine/ is written.
 """
@@ -30,11 +39,22 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 STATE_DIR = Path(".claude") / "state" / "contracts"
+FEATURES_REL = Path(".engine") / "architecture" / "feature"
+AC_HEADING = re.compile(r"^##\s*(?:Acceptance criteria|Критерії приймання)\b(?P<rest>.*)$", re.MULTILINE | re.IGNORECASE)
+UNSETTLED = re.compile(r"PROVISIONAL|\[NEEDS CLARIFICATION", re.IGNORECASE)
+GROUND = re.compile(r"(?<![\w-])J-\d+#AC-\d+(?![\w-])"            # a sealed journey's criterion (board 208)
+                    r"|(?<![\w-])[GD]\d+(?![\w-])"                  # a line of the goals: a goal, a done-when
+                    r"|\d{4}-\d\d-\d\d[^«\n]*«[^»]*\S[^»]*»"          # the owner's words verbatim, with their date
+                    r"|^\[(?:тех|tech)\]")                           # a technical criterion
+COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+TABLE_RULE = re.compile(r"^\s*\|?[\s:|-]*-[\s:|-]*$")
 EXIT_OK, EXIT_USAGE, EXIT_MISMATCH, EXIT_NONE = 0, 2, 3, 4
 
 
@@ -54,7 +74,68 @@ def fingerprint_path(root: Path, contract: Path) -> Path:
     return root / STATE_DIR / f"{contract.stem}.sha256"
 
 
+def criteria(text: str) -> tuple[str, list[str]] | None:
+    """(the heading's words after «Acceptance criteria», the items with their continuation lines); None: no such section."""
+    match = AC_HEADING.search(text)
+    if not match:
+        return None
+    body = text[match.end():]
+    end = re.search(r"^#{1,2}\s", body, re.MULTILINE)
+    lines = COMMENT.sub("", body[:end.start()] if end else body).splitlines()
+    items: list[str] = []
+    for n, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#") or TABLE_RULE.match(line):
+            continue
+        if line.startswith("|") and n + 1 < len(lines) and TABLE_RULE.match(lines[n + 1]):
+            continue  # a table's header row
+        if items and line.startswith((" ", "\t")) and not LIST_ITEM.match(line):
+            items[-1] += " " + line.strip()  # the continuation of the item above
+            continue
+        # Every other line is a criterion: a list item of any marker (-, *, +, 1., 1)), a table row, a paragraph —
+        # a criterion written in another form is still a criterion (board 412, the overseer's BLOCK of the numbered list).
+        items.append(LIST_ITEM.sub("", line, count=1).strip().strip("|").strip())
+    return match["rest"], items
+
+
+def acceptance_errors(root: Path, contract: Path) -> list[str]:
+    """Why the acceptance criteria behind this contract are not the owner's (board 412), or []."""
+    sources = [(contract, contract.read_text(encoding="utf-8", errors="replace"))]
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import testing
+
+        found = testing.feature_of(root, contract.stem)
+    except (ImportError, OSError):
+        found = None
+    if found is not None:
+        artifact = root / FEATURES_REL / f"{found[0].name}.md"
+        if artifact.is_file():
+            sources.append((artifact, artifact.read_text(encoding="utf-8", errors="replace")))
+    errors = []
+    for path, text in sources:
+        read = criteria(text)
+        if read is None:
+            continue
+        where = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+        heading, items = read
+        if UNSETTLED.search(heading):
+            errors.append(f"{where}: «Acceptance criteria{heading}» — criteria the owner has not ratified")
+        for item in items:
+            if UNSETTLED.search(item):
+                errors.append(f"{where}: «{item[:70]}» is PROVISIONAL / NEEDS CLARIFICATION")
+            elif not GROUND.search(item):
+                errors.append(f"{where}: «{item[:70]}» cites no journey (J-N#AC-k), no goals line (G…, D…), no owner's words "
+                              "with their date, and is not `[тех]`")
+    return errors
+
+
 def seal(root: Path, contract: Path) -> int:
+    unsettled = acceptance_errors(root, contract)
+    if unsettled:
+        print("REFUSED: the acceptance criteria are not the owner's (board 412; Article 5) — the contract is not sealed:\n- "
+              + "\n- ".join(unsettled) + "\nPROVISIONAL is for technical build parameters only. Park the feature with the question "
+              "to the owner (`board.py open-item --to blocked`), or derive the criteria from a sealed journey.", file=sys.stderr)
+        return EXIT_MISMATCH
     target = fingerprint_path(root, contract)
     if target.exists():
         print(

@@ -35,9 +35,41 @@ def flat(text: str) -> str:
 
 def test_Q1_route_schema_options_lists_only_the_intents_allowed_for_the_reply_to() -> None:
     expected = {
-        None: {"new_task", "plan_week", "note", "move", "working_on"},
-        "plan": {"yes", "edit", "new_task", "plan_week", "note", "move", "working_on"},
-        "case": {"no", "not_needed", "case_name", "new_task", "plan_week", "note", "move", "working_on"},
+        None: {
+            "new_task",
+            "plan_week",
+            "schedule",
+            "note",
+            "move",
+            "working_on",
+            "work_question",
+            "recall",
+        },
+        "plan": {
+            "yes",
+            "edit",
+            "new_task",
+            "plan_week",
+            "schedule",
+            "note",
+            "move",
+            "working_on",
+            "work_question",
+            "recall",
+        },
+        "case": {
+            "no",
+            "not_needed",
+            "case_name",
+            "new_task",
+            "plan_week",
+            "schedule",
+            "note",
+            "move",
+            "working_on",
+            "work_question",
+            "recall",
+        },
     }
     reply_tos = {None: None, "plan": Question("plan", "p1", "fp"), "case": case_q("a1")}
     for key, reply_to in reply_tos.items():

@@ -330,26 +330,39 @@ def test_open_questions_without_draft_is_empty() -> None:
 
 
 def test_open_questions_returns_the_source_reply() -> None:
+    # Superseded by calm-open (Seam): opening no longer calls `planning.open_question`; a fresh asking draft
+    # is not shown on open and stays as it was.
     w = guide_seen(world(duration_min=None))
     asked = w.start().question
     assert asked is not None
-    result = open_all(w, Lazy(w.calendar))
-    assert result.replies == [Reply(ASK_DURATION, Question("duration", asked.id, None))]
+    before = draft(w)
+    lazy = Lazy(w.calendar)
+    result = open_all(w, lazy)
+    assert result.replies == []
     assert result.login_needed is False
     assert result.failed == []
+    assert lazy.calls == 0
+    assert draft(w) == before
 
 
 def test_open_questions_login_needed_from_source() -> None:
+    # Superseded by calm-open (Seam): `login_needed` is always False; an expired sign-in is not asked on open.
     w = guide_seen(world())
     shown(w.start())
-    result = open_all(w, Lazy(w.calendar, LoginExpired()), NOW + timedelta(minutes=1))
-    assert result.replies == [Reply(SIGN_IN_AGAIN)]
-    assert result.login_needed is True
+    before = draft(w)
+    lazy = Lazy(w.calendar, LoginExpired())
+    result = open_all(w, lazy, NOW + timedelta(minutes=1))
+    assert result.replies == []
+    assert result.login_needed is False
+    assert lazy.calls == 0
+    assert draft(w) == before
 
 
 def test_open_questions_failed_source_is_skipped_and_named(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Superseded by calm-open (Seam): the plan is no source of the open, so a broken Calendar fails nothing.
     w = guide_seen(world())
     shown(w.start())
+    before = draft(w)
 
     def broken(time_min: datetime, time_max: datetime) -> list[object]:
         raise requests.HTTPError("fake: 500 Backend Error")
@@ -358,8 +371,8 @@ def test_open_questions_failed_source_is_skipped_and_named(monkeypatch: pytest.M
     result = open_all(w, Lazy(w.calendar), NOW + timedelta(minutes=1))
     assert result.replies == []
     assert result.login_needed is False
-    assert len(result.failed) == 1
-    assert isinstance(result.failed[0], str) and result.failed[0]
+    assert result.failed == []
+    assert draft(w) == before
 
 
 # ------------------------------------------------------------------ invariants

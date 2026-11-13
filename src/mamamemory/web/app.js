@@ -6,6 +6,7 @@ import { speak } from "/speak.js";
 import { makePlay } from "/player.js";
 import { initialButton, onButton } from "/speak_button.js";
 import { restore } from "/open_questions.js";
+import { loadGuide } from "/help.js";
 import { createRecorder } from "/recorder.js";
 import { initial, on, statusOf } from "/voice_state.js";
 
@@ -38,11 +39,16 @@ async function message(text, replyTo) {
   }
 }
 
-function show(reply) {
+/** Лише абзац і 🔊 — без змін очікуваного питання (гайд кнопкою, calm-open). */
+function renderText(text) {
   const item = document.createElement("p");
-  item.textContent = reply.text;
+  item.textContent = text;
   conversation.append(item);
-  if (reply.text) conversation.append(speakButton(reply.text));
+  if (text) conversation.append(speakButton(text));
+}
+
+function show(reply) {
+  renderText(reply.text);
   const button = yesButton(reply);
   if (button) {
     const yes = document.createElement("button");
@@ -192,7 +198,7 @@ async function upload(input) {
   render();
 }
 
-for (const [button, input] of [["photo", "photo-input"], ["add", "add-input"]]) {
+for (const [button, input] of [["add", "add-input"]]) {
   const field = document.getElementById(input);
   document.getElementById(button).addEventListener("click", () => field.click());
   field.addEventListener("change", () => upload(field));
@@ -204,3 +210,11 @@ render();
 openQuestions();
 
 window.mamamemory = { send };
+
+// ------------------------------------------------------------------ «Що я вмію» (calm-open)
+
+document.getElementById("help").addEventListener("click", async () => {
+  const guide = await loadGuide(fetch);
+  if (guide === "login") window.location.href = "/auth/login";
+  else if (guide) renderText(guide.text);
+});

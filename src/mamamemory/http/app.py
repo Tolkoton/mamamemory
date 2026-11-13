@@ -115,7 +115,9 @@ def _add_routes(app: FastAPI) -> None:
     app.add_api_route("/speak.js", _script("speak.js"), methods=["GET"])
     app.add_api_route("/player.js", _script("player.js"), methods=["GET"])
     app.add_api_route("/speak_button.js", _script("speak_button.js"), methods=["GET"])
+    app.add_api_route("/help.js", _script("help.js"), methods=["GET"])
     app.add_api_route("/api/open", _open, methods=["GET"])
+    app.add_api_route("/api/guide", _guide, methods=["GET"])
     app.add_api_route("/api/message", _message, methods=["POST"])
     app.add_api_route("/api/transcribe", _transcribe, methods=["POST"])
     app.add_api_route("/api/plan/confirm", _confirm, methods=["POST"])
@@ -145,6 +147,15 @@ def _open(request: Request) -> dict[str, Any]:
     for source in found.failed:
         _log_error(request, OpenQuestionSourceFailed(source), 200)
     return {"replies": [_reply_json(r) for r in found.replies], "login_needed": found.login_needed}
+
+
+def _guide(request: Request) -> dict[str, Any]:
+    """`GET /api/guide` → `{reply}` — гайд мовою акаунта для кнопки «Що я вмію» (calm-open).
+
+    Нічого не пише."""
+    session = current_session(request)
+    text = assistant.guide_text(access.language(session, request.app.state.store))
+    return {"reply": _reply_json(Reply(text))}
 
 
 class SpeakTooLong(Exception):

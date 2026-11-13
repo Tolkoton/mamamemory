@@ -180,6 +180,9 @@ by the owner and sealed. You read it; you never write it.
 
 # Pre-flight
 - Run the goals gate above.
+- `python3 .claude/hooks/journeys.py status` — the user journeys (level J, `/journey-architect`): read
+  `.engine/journeys/` when it exists; its steps and `J-N#AC-k` are what M1 and M4 build on. None yet in
+  a product a person sees or talks to → say `NEXT: /journey-architect` to the owner; M1–M3 may go on, M4 may not.
 - Read `docs/infra.md` — the facts only the operator knows: the cloud project, the region, the runner's
   access, what is already deployed. Template: `templates/project/docs/infra.md`. If the file is missing,
   one question to the owner listing what is needed; the operator writes it — you do not ask the owner to
@@ -331,6 +334,18 @@ structure the project's size does not yet justify.
 Output: the component-level half of `.engine/architecture/architecture-map.md` (incl.
 the dependency rules) + an ADR per ratified one-way door.
 
+**M3, a conversational product — the conversation model (board 209).** When the product talks (the journeys
+say `Інтерфейс: розмова` or `екрани і розмова`, the goals name a voice, a chat or an assistant, or the code
+has an LLM router), M3 also writes `.engine/architecture/conversation-model.md` + `.json`
+(`.claude/references/conversation-model.md`): the states with the intents allowed in each, every pending
+question with its answer, its «not an answer → new command», ≤ 2 re-asks and its exit, ONE priority rule,
+ONE routing point, every intent with 3+ phrases and the intents it is confused with. Its input is the
+journeys — every `question` state and every row of `.engine/journeys/interference.md` — never invention:
+without journeys it is a question for the owner. `python3 .claude/hooks/conversation.py check` clean, then
+the master-critic's `conversation` lens; once the router exists, `CONVERSATION_INTENTS` (and
+`CONVERSATION_REPLY_KINDS`) in `.claude/project.env` name its enum, and the Stop gate holds the code to the
+model. The owner sees the diagram and the tables in plain words (what waits for an answer, and how it is left).
+
 ---
 
 # Between levels — the simplifier  (after M3's artifacts, before any decomposition)
@@ -350,11 +365,20 @@ in the report, unmarked.
 
 # Phase M4 — Feature decomposition
 
-Break the product into **features** (each mapping to a bounded context / coherent
-capability). Draft the feature DAG → stress-test with the master-critic
+**The journeys gate first (board 208).** `python3 .claude/hooks/journeys.py gate`. Exit 0 → go on. Exit 4
+(nothing declared) → read the goals: a product nobody sees or talks to gets `.engine/journeys/INDEX.md`
+with `Інтерфейс: немає` and `Підстава: <its goals line>`, and M4 goes on as before; any other product goes
+to `/journey-architect`. Exit 3 → do not cut: features with screens or a conversation are not built on
+unapproved journeys — the owner's answer «Ні, паркує». Attended, run `/journey-architect` with the owner;
+unattended, park with the draft (`/journey-architect`, «Without the owner») and continue with technical work.
+
+Break the product into **features** — cut from the **steps of the story map** (`.engine/journeys/INDEX.md`),
+left to right, the core journey first; each feature a coherent capability inside a bounded context.
+Every acceptance criterion of a feature is a journey's `J-N#AC-k`, verbatim, or a technical one marked
+`[тех]`; `python3 .claude/hooks/journeys.py trace` must pass before the critic is asked. Draft the feature DAG → stress-test with the master-critic
 (`decomposition` phase) until `MASTER_CRITIC_PASS`. The critic enforces coverage, an
 acyclic DAG, and **identifies the walking skeleton** — the thinnest end-to-end feature
-chain. Record the feature list + DAG in `.engine/architecture/INDEX.md`, with a
+chain; with journeys, the chain that walks the **core journey** from its first step to its last. Record the feature list + DAG in `.engine/architecture/INDEX.md`, with a
 **Mermaid diagram of the feature DAG** (walking skeleton highlighted).
 
 ---
@@ -363,7 +387,10 @@ chain. Record the feature list + DAG in `.engine/architecture/INDEX.md`, with a
 
 Build the **walking skeleton** FIRST: the thinnest end-to-end feature chain, via
 `/feature-architect` (which itself proves each feature's slices compose via a tracer
-bullet). This proves the *architecture* composes before bulk features.
+bullet). This proves the *architecture* composes before bulk features. With journeys
+(R4 §1, board 208) the walking skeleton **is the core journey**, walked from its first step to its
+last on the deployed application by thin implementations of every step — the layers connect as a
+consequence, not as the goal; its exit is that walk, not a chain of green unit tests.
 - Skeleton runs end-to-end → architecture integration **verified**; proceed.
 - Skeleton fails → an architectural premise is false; mark `falsified`, propagate
   (Art. 8), return to M2 or M3 (or the owner accepts the risk).
@@ -394,6 +421,8 @@ boundaries stay with the owner.)*
   M2 and the component/dependency diagram from M3; kept current as features land (the
   feature-critic and master-critic read it).
 - `.engine/architecture/INDEX.md` — the feature list + DAG diagram + walking skeleton.
+- `.engine/architecture/conversation-model.md` + `.json` — a conversational product's states, pending
+  questions, intents, the priority rule and the routing point (M3; `conversation.py check`).
 - `docs/adr/NNNN-*.md` — one ADR per ratified one-way-door decision.
 - premise nodes in `.engine/premises/premise-log.md` for project-level premises.
 

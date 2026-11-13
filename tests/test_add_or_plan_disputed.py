@@ -28,15 +28,19 @@ def test_Q1_next_question_itself_never_asks_the_priorities_in_add_mode() -> None
 
 def test_Q2_route_prompt_carries_the_contract_hints_in_their_words() -> None:
     """Q2: the plan_week hint and the rewritten new_task rule are given to the route model in the contract's
-    words: «мама просить спланувати тиждень чи дні» and «— new_task, якщо мама не просить спланувати
-    тиждень»."""
+    words. The plan_week hint follows show-schedule (it superseded add-or-plan here): «plan_week — лише коли
+    просить спланувати («сплануй тиждень», «давай планувати»)», and «що в мене на тиждень» is gone from it;
+    the rest of add-or-plan's hints stand: «навіть з задачами в тій самій фразі» and «— new_task, якщо мама
+    не просить спланувати тиждень»."""
     w = add_or_plan()
     w.ai.says(task(NOTARY))
     w.ai.intent = "new_task"
     w.message("додай задачу подзвонити нотаріусу", None)
     assert w.ai.route_prompts, "the route model was not asked"
     prompt = " ".join(w.ai.route_prompts[-1].split())
-    assert "plan_week — мама просить спланувати тиждень чи дні" in prompt, prompt
+    assert "plan_week — лише коли просить спланувати" in prompt, prompt
+    assert "«сплануй тиждень», «давай планувати»" in prompt, prompt
+    assert "що в мене на тиждень»" not in prompt, prompt
     assert "навіть з задачами в тій самій фразі" in prompt, prompt
     assert "new_task, якщо мама не просить спланувати тиждень" in prompt, prompt
 

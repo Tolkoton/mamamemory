@@ -63,9 +63,9 @@ A verdict records a finding. Route by whether the fix needs a human, not by the 
   `.engine/overseer/escalations.md` with its cost-to-reverse, act on your own recommendation,
   continue. Logging is what closes a decision, and CLOSED means closed: never re-raise it
   with the owner; new evidence gets a superseding entry.
-- A deviation from an explicit owner instruction is classified by reversibility like anything
-  else: if its premise is shown false, say so once, do what is right, log it, continue. A
-  one-way door or an Article 5 product decision is parked, never decided alone.
+- A deviation from an explicit owner instruction is classified by reversibility: premise shown false → say so
+  once, do what is right, log it, continue. A one-way door or an Article 5 decision is parked, never decided alone —
+  so is a feature while `journeys.py gate` or `owner_walk.py gate` (the owner's walk, reason 1) ≠ 0; PROVISIONAL: technical only.
 - Attended, `AskUserQuestion` is only for the three reasons to stop and Article 5; unattended, never.
   A two-way door with your own advice: decide, log, continue. Never ask «run it now?» after an approval.
 

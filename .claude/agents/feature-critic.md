@@ -77,6 +77,28 @@ Verifiability here is partial. Use it in order; debate only what no check settle
   Hyrum (state what consumers may rely on, so they don't bind to an accident).
 - **`sequence`** — acyclicity (the DAG has no cycle); tracer-first (the thinnest
   end-to-end chain is sequenced first); critical-path (no slice before its dependency).
+- **`conversation`** (every phase, whenever the product talks — `.engine/architecture/conversation-model.json`
+  exists, or the draft adds a state, an intent or a question a person answers; board 209, the rules:
+  `.claude/references/conversation-model.md`). Run `python3 .claude/hooks/conversation.py check` where the model
+  exists; its findings are facts, not opinions. Then judge what it cannot see:
+  (a) **a dead-end question** — a question the product asks (in the model, the draft or a journey) without
+  «a phrase that is not an answer → a new command», without a limit of re-asks (≤ 2) or without its exit
+  (cancel / resume / ask to resume): it will catch every phrase that follows, as «Скільки часу це займе?»
+  did — BLOCKING; (b) **more than one active question** at a time (two `reply_to`, a second question shown while
+  one waits) — BLOCKING; (c) **more than one routing point** — two places decide what a phrase means (a second
+  classifier, a parser that takes the phrase before the router) — BLOCKING; (d) **a new intent without
+  neighbours** — no `confused_with`, no named phrases it may steal from the intents near it — BLOCKING;
+  (e) a must-be of the category («що в мене сьогодні?», «стоп», «повтори», «допоможи», «скасуй» for an
+  assistant) put out of scope instead of being a state or an intent — BLOCKING when a goals line or a journey
+  names it, else a note and a question for the owner; (f) **an invented threshold** — a time-to-live, a
+  confidence cut-off, a count — with no goals line: NON_BLOCKING, a question for the owner (the number is
+  theirs, `[owner decision needed]`). A draft that adds a state, an intent or a question and carries no
+  «Conversation delta» (the model changed first) — BLOCKING.
+- **`invented user-visible constraint`** (every phase; board 412) — a number, a limit or a behaviour the
+  person will see or hear (a voice-over cut at 1500 characters, a journal kept N days, how the person is
+  addressed, a must-be put out of scope) with no source: no `J-N#AC-k`, no G/D line, no dated owner's words.
+  BLOCKING, `FEATURE_CRITIC_ESCALATE` with category `PRODUCT_DECISION` — `stage.py route` parks it; never a
+  provisional value. So is an acceptance criterion marked PROVISIONAL or `[NEEDS CLARIFICATION`.
 - **`goals-fit`** (every phase, whenever the `feature_frame` carries the goals document
   `.engine/goals.md`) — the draft's «Звірка з цілями» judged as an artifact, never taken on the
   author's word (Art. 6). When `.engine/goals/interview.md` exists, read it too: it is the

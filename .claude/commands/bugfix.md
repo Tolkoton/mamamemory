@@ -1,5 +1,5 @@
 ---
-description: Fix one bug in full. Writes the bug record `.engine/bugs/<number-name>.md` (the contract and the report of the fix), reproduces the bug (three attempts, then parks — never a fix on a guess), writes a test that fails for the right reason, records the cause before the fix and searches for the same places, makes the smallest fix inside a ready budget (40 new lines is a signal that calls the simplifier, not a ceiling), proves mechanically with `bugfix.py prove` that the test fails without the fix and passes with it, goes through the gate and the overseer, and queues the lesson. Use when something that used to be specified behaves wrongly. Not for behaviour nobody wrote down (that is a question for the owner), not for new behaviour (→ /plan-slice).
+description: Fix one bug in full. Writes the bug record `.engine/bugs/<number-name>.md` (the contract and the report of the fix), reproduces the bug (three attempts, then parks — never a fix on a guess), writes a test that fails for the right reason, records the cause before the fix and searches for the same places, makes the smallest fix inside a ready budget (40 new lines is a signal that calls the simplifier, not a ceiling), proves mechanically with `bugfix.py prove` that the test fails without the fix and passes with it, goes through the gate and the overseer, and queues the lesson. Use when something that used to be specified behaves wrongly. Not for behaviour nobody wrote down (that is a question for the owner), not for new behaviour (→ /plan-slice), not for the owner's complaint about a step of a journey (→ /owner-feedback).
 ---
 
 You are running **/bugfix**: one bug, fixed in full. `$ARGUMENTS` is the report — what was seen,
@@ -18,7 +18,9 @@ confirmed rule of `.engine/onboard/profile.md`, a line of `.engine/goals.md`, or
 words in the task. Cite it in the record.
 
 If the expected behaviour is written nowhere and cannot be derived from the profile or the goals,
-this is a product decision (Article 5): a question for the owner, not a fix. Attended — ask it
+this is a product decision (Article 5): a question for the owner, not a fix. The owner's complaint about
+a step of a journey (`.engine/journeys/`) — behaviour they called wrong, written down or not — goes to
+`/owner-feedback` (board 412): the class over every state, the journey first, a new walk. Attended — ask it
 (`AskUserQuestion`), record the answer verbatim as the source, continue. Unattended — write the
 question into the record and into the board task under «Питання до власника», move the task to
 `tasks/blocked/`, and change no code. "It is obviously wrong" is not a source.

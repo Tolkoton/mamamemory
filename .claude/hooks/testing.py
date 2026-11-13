@@ -2,7 +2,7 @@
 """testing.py — the testing manager and the slice tester: who is called, what they said, what holds.
 
     python3 .claude/hooks/testing.py request <slug> --point a|b          # the manager: facts, then the launch line
-    python3 .claude/hooks/testing.py request <slug> --tester contract|objection|block [--package FILE]
+    python3 .claude/hooks/testing.py request <slug> --tester contract|objection|block|journey [--package FILE]
     python3 .claude/hooks/testing.py request <slug> --tester supersede --by <new-slug> --package FILE
     python3 .claude/hooks/testing.py guard                               # PreToolUse hook (stdin: the envelope)
     python3 .claude/hooks/testing.py record [--answer FILE]              # SubagentStop hook; by hand only while not wired
@@ -12,6 +12,7 @@
     python3 .claude/hooks/testing.py seal <slug> | check <slug> | gate <slug> | status [<slug>] | ledger
     python3 .claude/hooks/testing.py reseal <slug> --owner-answer <card>  # the owner's «так» in a board card
     python3 .claude/hooks/testing.py feature-close <feature>             # 0 the feature may close, 3 it may not
+    python3 .claude/hooks/testing.py journey-close <feature>             # its journeys on the deployed revision: 0 / 3 (journey_e2e.py)
     python3 .claude/hooks/testing.py mutation <slug> [--timeout S] | mutation-result <slug> --survived N --handled N
 
 WHO DECIDES WHAT (board 060, built by board 062). The script counts the facts and holds the
@@ -38,6 +39,15 @@ MANDATORY CASES — the manager cannot cancel them; `validate` refuses any other
       names and already exists, at (b) by the real diff, the slice's own tests counted; measured
       by test_touch.py, the way the delete guard measures it; with SOURCE_DIRS set, code under it
       only (board 311: a smoke script is not the tester's)            -> the tester (a), catch-up now (b)
+  O9  the slice closes a feature whose acceptance criteria cite a journey (`J-N#AC-k`): what a person
+      sees or says changed (board 317)                                -> `journey` now (b): the tester
+      in mode `journey` writes the Playwright spec of every journey, blind to the code, sealed
+
+THE JOURNEY CHECK (board 317). A slice of a feature that cites journeys has a fourth check at (b),
+`journey`: the spec per journey (`e2e/J-N[-name].spec.ts`) the tester writes in mode `journey` from
+the journey's text and the public `data-state` only, sealed like contract tests; the owner's complaints
+in the corpus are sealed row by row. Run on the deployed revision by the operator, judged by
+`journey-close` (journey_e2e.py) before the feature is reported built.
 
 RED IS RUN HERE, NOT CLAIMED. `record` runs every contract test of a hand-in itself: each must
 fail, and not on an import; a test marked `keeps` (behaviour the contract tells to preserve) must
@@ -88,6 +98,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import journey_e2e
 import test_touch
 
 JsonObj = dict[str, Any]
@@ -108,8 +119,9 @@ MANAGER, TESTER = "test-manager", "slice-tester"
 AGENTS = (MANAGER, TESTER)
 EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 AGENT_TOOLS = frozenset({"Agent", "Task"})
-MODES = ("contract", "objection", "block", "supersede")
+MODES = ("contract", "objection", "block", "supersede", "journey")
 KINDS = ("catch_up", "integration", "mutation")
+JOURNEY = "journey"     # the fourth check at (b), only for a slice of a feature that cites journeys (board 317)
 WHEN = ("now", "defer", "none")
 VERDICTS = ("test_wrong", "test_right", "contract_ambiguous")
 SUPERSEDE_VERDICTS = ("superseded", "test_right", "contract_ambiguous")
@@ -600,6 +612,7 @@ def block_facts(root: Path, slug: str) -> JsonObj:
         "connected_ready_blocks": ready_blocks,
         "earlier_in_block": [history(root, s) for s in earlier if s],
         "acceptance_criteria": feature.acceptance,
+        "journeys": [f"J-{n}" for n in journey_e2e.feature_journeys(root, feature.name) or []],
     }
 
 
@@ -751,6 +764,9 @@ def mandatory(facts: JsonObj) -> dict[str, str]:
     untested = [f["file"] for f in facts.get("changed_code_and_tests", []) if not f["touched"]]
     if untested:
         fired["O8"] = "the slice changed working code no test touches: " + ", ".join(untested)
+    if facts.get("closes_feature") and facts.get("journeys"):
+        fired["O9"] = ("the slice closes a feature a person sees or talks to (" + ", ".join(facts["journeys"])
+                       + "): the journey check cannot be deferred or dropped")
     return fired
 
 
@@ -758,9 +774,14 @@ def required_now(fired: dict[str, str]) -> dict[str, list[str]]:
     """Point (b): which checks the fired cases demand now, with the cases that demand each."""
     need: dict[str, list[str]] = {}
     for case in fired:
-        kind = "integration" if case == "O5" else case.partition(":")[2] if case.startswith("O6") else "catch_up"
+        kind = {"O5": "integration", "O9": JOURNEY}.get(case) or (case.partition(":")[2] if case.startswith("O6") else "catch_up")
         need.setdefault(kind, []).append(case)
     return need
+
+
+def kinds_of(facts: JsonObj) -> tuple[str, ...]:
+    """The checks a decision of (b) answers: the journey check only where the feature cites a journey."""
+    return (*KINDS, JOURNEY) if facts.get("journeys") else KINDS
 
 
 def schema_errors(decision: object, facts: JsonObj) -> list[str]:
@@ -778,9 +799,11 @@ def schema_errors(decision: object, facts: JsonObj) -> list[str]:
             errors.append("`builder` (do not switch) needs BOTH conditions named: `small` and `uniform`, each a sentence about this slice")
         return errors
     checks = decision.get("checks")
-    if not isinstance(checks, dict) or set(checks) != set(KINDS):
-        return [*errors, f"`checks` holds exactly these keys: {', '.join(KINDS)}"]
-    for kind in KINDS:
+    kinds = kinds_of(facts)
+    if not isinstance(checks, dict) or set(checks) != set(kinds):
+        return [*errors, f"`checks` holds exactly these keys: {', '.join(kinds)}"
+                + (f" — `{JOURNEY}` because the feature cites {', '.join(facts['journeys'])}" if JOURNEY in kinds else "")]
+    for kind in kinds:
         entry = checks[kind]
         if not isinstance(entry, dict) or entry.get("when") not in WHEN or not str(entry.get("reason", "")).strip():
             errors.append(f"`checks.{kind}` needs `when` ({' | '.join(WHEN)}) and a `reason`")
@@ -809,8 +832,12 @@ def violations(decision: JsonObj, facts: JsonObj) -> list[str]:
 
 
 def validate(decision: object, facts: JsonObj) -> list[str]:
+    """The shape first, then every mandatory case the decision contradicts — named even beside a shape error
+    (board 317: «deferred until an event that has come» is also O9's refusal, and the manager is told so)."""
     errors = schema_errors(decision, facts)
-    return errors or violations(decision if isinstance(decision, dict) else {}, facts)
+    if not isinstance(decision, dict) or (errors and not isinstance(decision.get("checks") or decision.get("decision"), (dict, str))):
+        return errors
+    return errors + [v for v in violations(decision, facts) if v not in errors]
 
 
 def enforced(decision: JsonObj | None, facts: JsonObj, why: str) -> JsonObj:
@@ -825,7 +852,7 @@ def enforced(decision: JsonObj | None, facts: JsonObj, why: str) -> JsonObj:
     given = (decision or {}).get("checks")
     said: JsonObj = given if isinstance(given, dict) else {}
     checks = {}
-    for kind in KINDS:
+    for kind in kinds_of(facts):
         entry: JsonObj | None = said[kind] if isinstance(said.get(kind), dict) and said[kind].get("when") in WHEN else None
         if kind in need:
             entry = {"when": "now", "reason": "; ".join(fired[c] for c in need[kind])}
@@ -937,10 +964,11 @@ def undone(root: Path, slug: str) -> list[str]:
     checks = every[at].get("checks") or {}
     done = {"catch_up": any(r.get("type") == "handin" and r.get("accepted") and r.get("mode") == "contract" for r in later),
             "integration": any(r.get("type") == "handin" and r.get("accepted") and r.get("mode") == "block" for r in later),
-            "mutation": any(r.get("type") == "mutation" for r in later)}
+            "mutation": any(r.get("type") == "mutation" for r in later),
+            JOURNEY: any(r.get("type") == "handin" and r.get("accepted") and r.get("mode") == JOURNEY for r in later)}
     how = {"catch_up": f"`testing.py request {slug} --tester contract`", "integration": f"`testing.py request {slug} --tester block`",
-           "mutation": f"`testing.py mutation {slug}`"}
-    return [f"{kind} of {slug}: the manager said «now», and it was not done ({how[kind]})" for kind in KINDS
+           "mutation": f"`testing.py mutation {slug}`", JOURNEY: f"`testing.py request {slug} --tester journey`"}
+    return [f"{kind} of {slug}: the manager said «now», and it was not done ({how[kind]})" for kind in (*KINDS, JOURNEY)
             if (checks.get(kind) or {}).get("when") == "now" and not done[kind]]
 
 
@@ -1051,6 +1079,18 @@ def request_tester(root: Path, slug: str, mode: str, package: Path | None, by: s
             return 3, park_slice(root, by, text, mine)
         payload |= {"by": by, "new_contract": f".engine/slices/{by}.md", "round": len(mine) + 1, "package": text,
                     "parked": is_parked(root, slug), "sealed": sorted(read_json(root / SEALS_REL / f"{slug}.json").get("files", {}))}
+    elif mode == JOURNEY:
+        if b is None or (b.get("checks") or {}).get(JOURNEY, {}).get("when") != "now":
+            return 1, f"REFUSED: journey specs are written when the manager said `{JOURNEY}: now` at point (b) of {slug}."
+        found = feature_of(root, slug)
+        wanted = journey_e2e.feature_journeys(root, found[0].name) if found else None
+        if not wanted:
+            return 1, f"REFUSED: {slug} is in no feature whose acceptance criteria cite a journey (`J-N#AC-k`)."
+        known = journeys_by_number(root)
+        payload |= {"feature": f"{FEATURES_REL.as_posix()}/{found[0].name}.md" if found else None, "expect": "recorded",
+                    "journeys": [{"id": f"J-{n}", "file": known[n].rel if n in known else None} for n in wanted],
+                    "spec_dir": journey_e2e.SPEC_DIR + "/", "conversation_model": (root / journey_e2e.MODEL_REL).is_file(),
+                    "reference": ".claude/references/e2e.md"}
     else:
         if b is None or (b.get("checks") or {}).get("integration", {}).get("when") != "now":
             return 1, f"REFUSED: integration tests are written when the manager said `integration: now` at point (b) of {slug}."
@@ -1092,7 +1132,7 @@ def guard(root: Path, envelope: JsonObj) -> JsonObj | None:
     waiting = pending(root)
     if waiting is None or waiting.get("agent") != agent:
         return deny(f"No request is pending for the agent `{agent}`, so it is not started. A request is made by the script: "
-                    "`python3 .claude/hooks/testing.py request <slug> --point a|b` (the manager) or `… --tester contract|objection|block|supersede` "
+                    "`python3 .claude/hooks/testing.py request <slug> --point a|b` (the manager) or `… --tester contract|objection|block|supersede|journey` "
                     "(the tester). Whether the tester is called is the manager's decision, not the builder's.")
     line = launch_line(str(waiting["id"]))
     if str(tool_input.get("prompt", "")).strip() != line:
@@ -1214,6 +1254,76 @@ def handin_errors(root: Path, request: JsonObj, handin: JsonObj) -> list[str]:
             errors.append(f"{rel}: holds both disputed and undisputed tests — a disputed test (one that depends on a question to the "
                           "contract) goes into a file of its own: whole files are sealed, and that one is not sealed before the answer")
     return errors
+
+
+def journeys_by_number(root: Path) -> dict[int, Any]:
+    import journeys
+
+    try:
+        return journeys.journeys(root)
+    except ValueError:
+        return {}
+
+
+SPEC_FORBIDDEN = re.compile(r"\.(?:skip|fixme|only|fail)\s*\(|\bretries\b")
+
+
+def journey_handin_errors(root: Path, request: JsonObj, handin: JsonObj) -> list[str]:
+    """A journey hand-in: a spec for every journey the feature cites, each in `e2e/` named by its journey, no
+    skip/fixme/only/retries, the screen read through `data-state`, every standing AC of the journey cited."""
+    if handin.get("mode") != JOURNEY or handin.get("slice") != request.get("slice"):
+        return [f"`mode` and `slice` must repeat the request: {JOURNEY!r}, {request.get('slice')!r}"]
+    specs = handin.get("specs")
+    if not isinstance(specs, list) or not specs or not all(isinstance(t, dict) for t in specs):
+        return ["`specs` is a non-empty list of {journey, file}"]
+    questions = handin.get("questions", [])
+    if not isinstance(questions, list) or not all(isinstance(q, dict) and str(q.get("id", "")).strip() and str(q.get("text", "")).strip()
+                                                  and str(q.get("reading_taken", "")).strip() for q in questions):
+        return ["`questions` is a list of {id, text, reading_taken} — or an empty list"]
+    known, asked = journeys_by_number(root), {str(q["id"]) for q in questions}
+    wanted = {str(j.get("id")) for j in request.get("journeys", [])}
+    errors = [f"{j}: the feature cites it, and no spec of the hand-in walks it" for j in sorted(wanted - {str(t.get("journey")) for t in specs})]
+    for spec in specs:
+        rel, journey = str(spec.get("file", "")).strip(), str(spec.get("journey", ""))
+        number = journey_e2e.spec_of(rel)
+        if journey not in wanted:
+            errors.append(f"{rel or '(no file)'}: `journey` {journey!r} is not one the feature cites ({', '.join(sorted(wanted))})")
+            continue
+        if not rel.startswith(journey_e2e.SPEC_DIR + "/") or number is None or f"J-{number}" != journey or not (root / rel).is_file():
+            errors.append(f"{rel or '(no file)'}: not an existing `{journey_e2e.SPEC_DIR}/{journey}[-name].spec.ts`")
+            continue
+        if spec.get("question") is not None and str(spec.get("question")) not in asked:
+            errors.append(f"{rel}: `question` {spec.get('question')!r} is not the id of one of `questions`")
+        text = (root / rel).read_text(encoding="utf-8", errors="replace")
+        errors += [f"{rel}: `{m.group(0).strip()}` — a journey spec runs every time, once, and a retry hides a flaky journey"
+                   for m in SPEC_FORBIDDEN.finditer(text)]
+        if "data-state" not in text:
+            errors.append(f"{rel}: reads no `data-state` — the screen's state is asserted through it, not through pixels or the code")
+        standing = [k for k, (struck, _) in sorted(known[number].acs.items()) if not struck] if number in known else []
+        errors += [f"{rel}: {journey}#AC-{k} is not cited — every standing acceptance criterion of the journey has its assertion, "
+                   f"its id in the test's title or a comment beside it" for k in standing if f"{journey}#AC-{k}" not in text]
+    return errors
+
+
+def record_journey(root: Path, request: JsonObj, handin: JsonObj) -> list[str]:
+    """A journey hand-in: its shape, then the seal — the specs, and the owner's complaints row by row. Nothing
+    is run: the journeys run on the deployed revision, in the operator's run (`.claude/references/e2e.md`)."""
+    errors = journey_handin_errors(root, request, handin)
+    if errors:
+        return errors
+    slug = str(request["slice"])
+    held = {str(t["file"]): [str(t["question"])] for t in handin["specs"] if t.get("question") is not None}
+    files = sorted({str(t["file"]) for t in handin["specs"]} - set(held))
+    seal_files(root, slug, files, held)
+    _, complaints = journey_e2e.seal_complaints(root)
+    lines = [f"{len(handin['specs'])} journey spec(s), written blind to the code; sealed: {', '.join(files) or 'nothing'}", complaints]
+    lines += [f"question to the journey {q['id']}: {one_line(q['text'], 300)} — reading taken: {one_line(q['reading_taken'], 200)}"
+              for q in handin.get("questions", [])]
+    lines += [f"NOT SEALED until its question is answered: {rel} ({', '.join(qs)})" for rel, qs in held.items()]
+    append_row(root, {"type": "handin", "slice": slug, "mode": JOURNEY, "accepted": True, "request": request["id"], "specs": handin["specs"],
+                      "questions": handin.get("questions", []), "sealed": files, "held": held},
+               f"{slug} — the tester's hand-in (journey)", lines)
+    return []
 
 
 def handed_files(root: Path, files: set[str]) -> set[str]:
@@ -1521,7 +1631,7 @@ def decision_lines(decision: JsonObj, facts: JsonObj, fired: dict[str, str]) -> 
         if decision["decision"] == "builder":
             lines += [f"small: {one_line(decision.get('small'))}", f"uniform: {one_line(decision.get('uniform'))}"]
         return lines
-    for kind in KINDS:
+    for kind in kinds_of(facts):
         entry = decision["checks"][kind]
         when = {"now": "NOW", "none": "not needed", "defer": f"DEFERRED until {entry.get('until')} (a debt)"}[entry["when"]]
         lines.append(f"{kind}: {when} — {one_line(entry['reason'], 300)}")
@@ -1566,7 +1676,8 @@ def record(root: Path, agent: str, text: str) -> tuple[int, str]:
         record_decision(root, request, final)
         (root / PENDING_REL).unlink(missing_ok=True)
         return 0, f"recorded: point ({request['point']}) of {request['slice']}" + (" — by the script, the manager's decision was refused twice" if errors else "")
-    errors = [problem] if answer is None else (record_objection if request.get("mode") in ("objection", "supersede") else record_tests)(root, request, answer)
+    recorder = {"objection": record_objection, "supersede": record_objection, JOURNEY: record_journey}.get(str(request.get("mode")), record_tests)
+    errors = [problem] if answer is None else recorder(root, request, answer)
     if not errors:
         (root / PENDING_REL).unlink(missing_ok=True)
         return 0, f"recorded: the tester's hand-in for {request['slice']} ({request.get('mode')})"
@@ -1739,6 +1850,16 @@ def audit_block(root: Path, slug: str | None) -> str | None:
     return None
 
 
+def journey_close(root: Path, name: str) -> tuple[int, str]:
+    """The feature's journeys on the deployed revision (journey_e2e.close); a pass goes into the ledger."""
+    code, text, seen = journey_e2e.close(root, name)
+    if code == 0 and seen:
+        append_row(root, {"type": "journey_close", "feature": name, **seen}, f"feature {name} — the journeys on the deployed revision",
+                   ["journeys " + ", ".join(f"{j} green {n}/{n}" for j, n in seen["runs"].items()) + f" on rev {seen['sha'][:12]}",
+                    *seen["findings"]])
+    return code, text
+
+
 def feature_close(root: Path, name: str) -> tuple[int, str]:
     path = root / FEATURES_REL / f"{name}.md"
     if not path.is_file():
@@ -1859,6 +1980,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status").add_argument("slug", nargs="?")
     sub.add_parser("ledger")
     sub.add_parser("feature-close").add_argument("feature")
+    sub.add_parser("journey-close").add_argument("feature")
     p = sub.add_parser("mutation")
     p.add_argument("slug")
     p.add_argument("--timeout", type=int, default=MUTATION_TIMEOUT_S)
@@ -1919,7 +2041,7 @@ def main(argv: list[str] | None = None) -> int:
         return finish(check_invariants(args.contract))
     if args.command == "request":
         if bool(args.point) == bool(args.tester):
-            return finish((2, "one of --point a|b (the manager) or --tester contract|objection|block|supersede"))
+            return finish((2, "one of --point a|b (the manager) or --tester contract|objection|block|supersede|journey"))
         if args.point:
             return finish(request_manager(root, load_env(root), args.slug, args.point))
         return finish(request_tester(root, args.slug, args.tester, args.package, args.by))
@@ -1941,6 +2063,8 @@ def main(argv: list[str] | None = None) -> int:
         return finish((0, path.read_text(encoding="utf-8") if path.is_file() else "(the testing ledger is empty)"))
     if args.command == "feature-close":
         return finish(feature_close(root, args.feature))
+    if args.command == "journey-close":
+        return finish(journey_close(root, args.feature))
     if args.command == "mutation":
         return finish(mutation(root, load_env(root), args.slug, args.timeout))
     return finish(mutation_result(root, args.slug, args.survived, args.handled, args.note))

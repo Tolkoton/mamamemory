@@ -11,27 +11,32 @@ ends with the line. Two open items never share an `at` unless a test says so (I3
 Superseded by guide («Перше відкриття»): an account without `settings/guide_shown` gets the guide first on
 the open; the tests of `assistant.open_questions` hold the other sources, so their account has already seen
 the guide (`guide_seen`).
+
+Superseded by calm-open: `assistant.open_questions` reads no plan — no plan reply, no «увійди знову»,
+`login_needed` always `False`, the calendar is not called and the plan draft is not changed; the case
+questions, their order and the line «Ще N …» are as before, now counting the case questions only.
 """
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 import requests
 
 from mamamemory import assistant, cases, planning
 from mamamemory.errors import LoginExpired
-from mamamemory.replies import Question, Reply
+from mamamemory.integrations.google_work import GoogleWork
+from mamamemory.replies import Reply
 from tests.case_questions_world import LEFT, WHICH, Asks, Lazy, case_q, question_replies
 from tests.note_to_case_world import NOT_ACTUAL, ask, placed
 from tests.photo_and_file_world import PDF, PNG, READ_TEXT, Uploads
 from tests.several_tasks_world import MEDICINE, NOTARY, task
-from tests.test_one_task_planning import ASK_DURATION, NO_FREE_TIME, NOW, World, shown, world
+from tests.test_one_task_planning import NO_FREE_TIME, NOW, World, shown, world
 from tests.voice_edits_world import editing
 
 KOCH = "пан Кох"
 SCHMIDT = "пані Шмідт"
 FISCHER = "пан Фішер"
-SIGN_IN_AGAIN = "Щоб показати план, увійди знову."
 WEEK = timedelta(days=7)
 MINUTE = timedelta(minutes=1)
 HOUR = timedelta(hours=1)
@@ -60,6 +65,23 @@ def plan_at(w: World, now: datetime) -> datetime | None:
     found = open_plan(w, now)
     assert found is not None, "expected an open plan question"
     return found.at
+
+
+def plan_draft(a: Asks) -> dict[str, Any] | None:
+    """The plan draft as it lies in the store (calm-open: the open never changes it)."""
+    return a.store.get(a.session.account_id, planning.DRAFT_PATH)
+
+
+class Counted:
+    """The `calendar` argument of the open that counts its calls (calm-open: the open never calls it)."""
+
+    def __init__(self, a: Asks) -> None:
+        self.inner = Lazy(a.calendar)
+        self.calls = 0
+
+    def __call__(self) -> GoogleWork:
+        self.calls += 1
+        return self.inner()
 
 
 # ------------------------------------------------------------------ decline_case (Seam 1)
@@ -422,59 +444,61 @@ def test_plan_at_of_a_draft_without_asked_at_is_its_first_show() -> None:
 # ------------------------------------------------------------------ assistant.open_questions (Seam 2)
 
 
-def test_open_with_two_materials_and_a_newer_plan_shows_the_plan_and_two_waiting() -> None:
+def test_open_with_two_materials_and_a_newer_plan_shows_the_newest_case_question_and_one_waiting() -> None:
     a = guide_seen(Asks())
     a.pending_note("a1", SCHMIDT, NOW - 2 * HOUR)
     a.pending_note("b1", FISCHER, NOW - HOUR)
     shown(a.plan.start())
-    alone = open_plan(a.plan, NOW + HOUR)
-    assert alone is not None and alone.reply.plan is not None
-    result = a.open_all(NOW + HOUR)
+    draft = plan_draft(a)
+    calendar = Counted(a)
+    result = a.open_all(NOW + HOUR, calendar=calendar)
     assert len(result.replies) == 1, result.replies
     newest = result.replies[0]
-    assert newest.question == alone.reply.question
-    assert newest.plan == alone.reply.plan
-    assert newest.text.startswith(alone.reply.text)
-    assert newest.text.endswith("Ще 2 питання чекають.")
+    assert newest.question == case_q("b1")
+    assert newest.plan is None
+    assert newest.text.startswith(ask(FISCHER))
+    assert newest.text.endswith("Ще 1 питання чекає."), newest.text
     assert result.login_needed is False
+    assert calendar.calls == 0
+    assert plan_draft(a) == draft
 
 
-def test_open_with_a_material_newer_than_the_plan_shows_the_case_question_after_reopens() -> None:
+def test_open_with_a_material_newer_than_the_plan_shows_only_the_case_question_after_reopens() -> None:
     a = guide_seen(Asks())
     shown(a.plan.start())
     a.pending_note("a1", SCHMIDT, NOW + 30 * MINUTE)
+    draft = plan_draft(a)
     for opened in (NOW + HOUR, NOW + 2 * HOUR):
         result = a.open_all(opened)
-        assert len(result.replies) == 1, (opened, result.replies)
-        newest = result.replies[0]
-        assert newest.question == case_q("a1")
-        assert newest.plan is None
-        assert newest.text.startswith(ask(SCHMIDT))
-        assert newest.text.endswith("Ще 1 питання чекає."), newest.text
+        assert result.replies == [Reply(ask(SCHMIDT), case_q("a1"))], (opened, result.replies)
+        assert plan_draft(a) == draft, opened
 
 
-def test_open_plan_reply_without_question_is_shown_before_and_not_counted() -> None:
+def test_open_with_no_free_time_for_the_plan_shows_only_the_case_question() -> None:
     a = guide_seen(Asks())
     a.pending_note("a1", SCHMIDT, NOW - HOUR)
     shown(a.plan.start())
     a.calendar.busy(NOW - HOUR, NOW + WEEK + HOUR)
-    result = a.open_all(NOW + MINUTE)
-    assert len(result.replies) == 2, result.replies
-    assert result.replies[0].text == NO_FREE_TIME
-    assert result.replies[0].question is None
-    assert result.replies[1] == Reply(ask(SCHMIDT), case_q("a1"))
+    calendar = Counted(a)
+    result = a.open_all(NOW + MINUTE, calendar=calendar)
+    assert result.replies == [Reply(ask(SCHMIDT), case_q("a1"))]
+    assert all(r.text != NO_FREE_TIME for r in result.replies)
+    assert calendar.calls == 0
 
 
-def test_open_sign_in_again_is_shown_and_not_counted() -> None:
+def test_open_does_not_ask_to_sign_in_again_and_login_needed_is_false() -> None:
     a = guide_seen(Asks())
     a.pending_note("a1", SCHMIDT, NOW - HOUR)
     shown(a.plan.start())
     result = a.open_all(NOW + MINUTE, LoginExpired())
-    assert result.replies == [Reply(SIGN_IN_AGAIN), Reply(ask(SCHMIDT), case_q("a1"))]
-    assert result.login_needed is True
+    assert result.replies == [Reply(ask(SCHMIDT), case_q("a1"))]
+    assert result.login_needed is False
+    assert result.failed == []
 
 
-def test_open_plan_failure_keeps_the_case_questions(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_open_with_a_broken_calendar_keeps_the_case_questions_and_fails_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     a = guide_seen(Asks())
     a.pending_note("a1", SCHMIDT, NOW - HOUR)
     a.pending_note("b1", FISCHER, NOW - 30 * MINUTE)
@@ -490,19 +514,20 @@ def test_open_plan_failure_keeps_the_case_questions(monkeypatch: pytest.MonkeyPa
     assert newest.question == case_q("b1")
     assert newest.text.startswith(ask(FISCHER))
     assert newest.text.endswith("Ще 1 питання чекає."), newest.text
-    assert len(result.failed) == 1
+    assert result.failed == []
 
 
-def test_open_case_failure_keeps_the_plan() -> None:
+def test_open_case_failure_shows_no_plan() -> None:
     a = guide_seen(Asks())
     shown(a.plan.start())
     a.pending_note("a1", SCHMIDT, NOW + HOUR)
-    alone = open_plan(a.plan, NOW + 2 * HOUR)
-    assert alone is not None
+    draft = plan_draft(a)
     a.store.broken = True
     result = a.open_all(NOW + 2 * HOUR)
-    assert result.replies == [alone.reply]
+    assert result.replies == []
     assert len(result.failed) == 1
+    assert result.login_needed is False
+    assert plan_draft(a) == draft
 
 
 def test_open_waiting_line_takes_the_form_of_its_number() -> None:
@@ -530,7 +555,7 @@ def test_open_waiting_line_takes_the_form_of_its_number() -> None:
         assert newest.text.endswith(line), (rest, newest.text)
 
 
-def test_open_without_pending_materials_is_the_plan_reply_as_before() -> None:
+def test_open_without_pending_materials_shows_nothing_of_the_plan() -> None:
     a, first = seeded()
     guide_seen(a)
     a.ai.file_to(first.name)
@@ -540,10 +565,12 @@ def test_open_without_pending_materials_is_the_plan_reply_as_before() -> None:
     a.ai.task["duration_min"] = None
     asked = a.plan.start().question
     assert asked is not None
+    draft = plan_draft(a)
     result = a.open_all(NOW + MINUTE)
-    assert result.replies == [Reply(ASK_DURATION, Question("duration", asked.id, None))]
+    assert result.replies == []
     assert result.login_needed is False
     assert result.failed == []
+    assert plan_draft(a) == draft
 
 
 # ------------------------------------------------------------------ one question per material (Seam 3)
@@ -679,20 +706,11 @@ def test_I2_no_and_not_needed_never_delete_the_material_its_text_or_its_original
 
 
 def test_I3_one_question_with_reply_to_is_shown_last_and_the_rest_is_counted() -> None:
-    lines = {0: None, 1: "Ще 1 питання чекає.", 2: "Ще 2 питання чекають.", 3: "Ще 3 питання чекають."}
+    lines = {0: None, 1: "Ще 1 питання чекає.", 2: "Ще 2 питання чекають."}
     # Material times: one before the plan's NOW, one after it, one at the plan's own time.
     times = [NOW - HOUR, NOW + 30 * MINUTE, NOW]
+    # Superseded by calm-open: the open reads no plan, so no plan kind is shown or counted.
     plan_kinds = ("none", "asking", "shown", "no_free_time", "sign_in", "plan_error", "case_error")
-    # (counted plan items, shown replies without a question) by kind.
-    plan_counts = {
-        "none": (0, 0),
-        "asking": (1, 0),
-        "shown": (1, 0),
-        "no_free_time": (0, 1),
-        "sign_in": (0, 1),
-        "plan_error": (0, 0),
-        "case_error": (1, 0),
-    }
     for kind in plan_kinds:
         for count in (0, 1, 2, 3):
             a = guide_seen(Asks())
@@ -707,23 +725,20 @@ def test_I3_one_question_with_reply_to_is_shown_last_and_the_rest_is_counted() -
             raises: BaseException | None = LoginExpired() if kind == "sign_in" else None
             if kind == "plan_error":
                 raises = requests.HTTPError("fake: 500 Backend Error")
-            counted_cases = 0 if kind == "case_error" else count
+            total = 0 if kind == "case_error" else count
             if kind == "case_error":
                 a.store.broken = True
-            plan_counted, plain_replies = plan_counts[kind]
-            total = counted_cases + plan_counted
             result = a.open_all(NOW + 2 * HOUR, raises)
             asked = question_replies(result.replies)
             label = (kind, count)
             assert len(asked) == (1 if total else 0), (label, result.replies)
-            assert len(result.replies) == len(asked) + plain_replies, (label, result.replies)
+            assert len(result.replies) == len(asked), (label, result.replies)
             if not total:
                 continue
             assert result.replies[-1] is asked[0], label
+            assert asked[0].question is not None and asked[0].question.kind == "case", label
             line = lines[total - 1]
             if line is None:
                 assert "Ще " not in asked[0].text, (label, asked[0].text)
             else:
                 assert asked[0].text.endswith(line), (label, asked[0].text)
-            for plain_reply in result.replies[:-1]:
-                assert "Ще " not in plain_reply.text, (label, plain_reply.text)

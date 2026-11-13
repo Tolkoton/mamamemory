@@ -8,6 +8,8 @@
     owner_action.py [--root DIR] seal-goals <sha256>
     owner_action.py [--root DIR] update-deps <sha256>
     owner_action.py [--root DIR] reseal-contract "<slug> <sha256>"
+    owner_action.py [--root DIR] seal-journey "<unit> <sha256>"
+    owner_action.py [--root DIR] accept-walk "j-N <sha256>"
 
 `apply-settings` is the one way the shared settings change, in the engine's repository and in
 every project it is installed into (board 038): settings_check.py, which ships with the engine,
@@ -58,6 +60,19 @@ answered «так» under a question that shows how the contract changes and off
 at once: contract_fingerprint.reseal writes the new fingerprint over the old one, and the audit of
 the slice is no longer held. A contract that changed since the question is stale and is not sealed.
 The fingerprint is machine state: nothing is left to commit.
+
+`seal-journey` is the one way a user journey is approved with nobody in the conversation (board 208):
+the owner answered «так» under a question that shows the journey (`.engine/journeys/`, a unit
+`index`, `interference` or `j-N`) and offers `seal-journey <unit> <sha256 of its file>`. journeys.py
+gives a unit never sealed its first seal (`first-seal`) and a sealed unit that changed its seal again
+(`amend`: no AC number dropped or reused, the features that cited a changed AC listed for review).
+A file that changed since the question is stale; one `journeys.py check` refuses is not sealed.
+
+`accept-walk` is the one way the owner's walk of a journey is accepted (board 412): the owner answered
+«так» under the walk card `owner_walk.py walk-card j-N` put in tasks/blocked/, which offers
+`accept-walk j-N <sha256 of .engine/journeys/walks/j-N.md>`. owner_walk.accept appends the row to
+`.engine/journeys/acceptance.md` (the journey at its revision, the features at theirs, the date, the word);
+a card that changed since, or a journey changed since the card, is stale. The runner commits the row.
 
 An agent may not edit .claude/settings.json (protect-paths.sh) and may not get there through
 this script either: it refuses inside a Claude Code session, as gate.py --close-escalation does.
@@ -306,9 +321,32 @@ def reseal_contract(root: Path, offered: str) -> int:
     return EXIT_STALE if contract_fingerprint.reseal(root, root / ".engine/slices" / f"{slug}.md", approved.strip()) else 0
 
 
+def seal_journey(root: Path, offered: str) -> int:
+    unit, _, approved = offered.partition(" ")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+    import journeys
+
+    if not journeys.UNIT.match(unit):
+        print(f"owner-action: seal-journey needs '<unit> <sha256>' (index, interference, j-N), got {offered or '(nothing)'}", file=sys.stderr)
+        return EXIT_STALE
+    verb = journeys.amend if journeys.seal_state(root, unit) == "changed" else journeys.first_seal
+    return verb(root, unit, approved.strip(), False)
+
+
+def accept_walk(root: Path, offered: str) -> int:
+    unit, _, approved = offered.partition(" ")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+    import owner_walk
+
+    if not re.fullmatch(r"j-\d+", unit):
+        print(f"owner-action: accept-walk needs 'j-N <sha256>', got {offered or '(nothing)'}", file=sys.stderr)
+        return EXIT_STALE
+    return EXIT_STALE if owner_walk.accept(root, unit, approved.strip()) else 0
+
+
 ACTIONS = {"apply-settings": apply_settings, "promote-rule": promote_rule, "reject-rule": reject_rule, "amend-goals": amend_goals,
            "seal-goals": seal_goals, "update-deps": update_deps,
-           "reseal-contract": reseal_contract}
+           "reseal-contract": reseal_contract, "seal-journey": seal_journey, "accept-walk": accept_walk}
 
 
 def main() -> int:

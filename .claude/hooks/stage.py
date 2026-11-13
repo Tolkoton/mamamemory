@@ -178,11 +178,15 @@ def seal(root: Path, slug: str, answers: list[str]) -> int:
         print(f"no such contract: {contract}", file=sys.stderr)
         return EXIT_USAGE
     stage, source = read_stage(root)
-    if seal_decision(stage, answers) == "seal":
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import contract_fingerprint
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import contract_fingerprint
 
+    if seal_decision(stage, answers) == "seal":
         return contract_fingerprint.seal(root, contract.resolve())
+    unsettled = contract_fingerprint.acceptance_errors(root, contract.resolve())
+    if unsettled:  # board 412: the owner is not asked to seal over criteria nobody ratified
+        print("REFUSED: the acceptance criteria are not the owner's (board 412):\n- " + "\n- ".join(unsettled), file=sys.stderr)
+        return EXIT_REFUSED
     card = owner_card(root, slug, answers)
     if card is None:
         print(f"REFUSED: stage production ({source}) and no card could be written in tasks/blocked/; "

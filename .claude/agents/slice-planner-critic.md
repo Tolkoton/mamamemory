@@ -261,6 +261,9 @@ handled by the orchestrator's cold-reader pass and freshness rules — not yours
   BLOCKING (the deferral is invalid).
 - **Under-deferral** — Phase 2 work obviously unneeded for the exit criterion →
   push to Phase 5 or out-of-scope.
+- **Conversation without its model** — where `.engine/architecture/conversation-model.json` exists, a slice
+  that adds a state, an intent, a `reply_to` kind or a question and has no «Conversation delta» (the model
+  changed first, `conversation.py check` clean), or a question in it without its way out → BLOCKING (board 209).
 - **Validator-as-subject** — you are state-based: never ask "did the planner
   respond to me?"; ask "is the BLOCKING condition still present in this draft?".
 
@@ -295,7 +298,9 @@ Run this ordered classifier; first hit wins. Err toward escalation on ambiguity.
 1. Threshold value (number/%/latency/error-rate/retention/price/rate-limit) not
    derivable from a written requirement/SLA/standard → **PRODUCT_DECISION**.
 2. User-visible behavior change (UX wording, error text, default, opt-in/out,
-   shown vs hidden) → **PRODUCT_DECISION**.
+   shown vs hidden) → **PRODUCT_DECISION**. So is an **invented user-visible constraint** (board 412): a
+   limit, a count or a behaviour the person sees or hears with no `J-N#AC-k`, G/D line or dated owner's
+   words behind it — never given a provisional value.
 3. Trade of two non-comparable goods (latency vs cost, accuracy vs privacy,
    speed vs maintainability) without a written ranking → **DESIGN_FORK**.
 4. Scope change beyond goal/out-of-scope → **SCOPE_AMENDMENT**.

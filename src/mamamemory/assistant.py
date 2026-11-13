@@ -12,6 +12,7 @@ from typing import Any
 
 from mamamemory import access, cases, planning
 from mamamemory.access import Session
+from mamamemory.cases import recall as case_recall
 from mamamemory.config import Config
 from mamamemory.integrations.ai import AI
 from mamamemory.integrations.google_work import GoogleWork
@@ -31,8 +32,10 @@ GUIDE_UK = (
     "Я допомагаю планувати й пам'ятати справи. Що можна сказати:\n"
     "• «Додай задачу подзвонити нотаріусу в понеділок» — поставлю в календар.\n"
     "• «Сплануй тиждень» — складу план з усіх задач.\n"
-    "• «Запиши до пані Шмідт: …», або 📷 чи ＋ — покладу у справу.\n"
+    "• «Запиши до пані Шмідт: …», або ＋ (фото чи файл) — покладу у справу.\n"
     "• «Переклади … до …» — перенесу в іншу справу.\n"
+    "• «Працюю над …», потім «що я робила з …?» — запам'ятаю й нагадаю.\n"
+    "• «Що ми знаємо про пані Шмідт?», «які плани на тиждень?» — розповім.\n"
     "• 🔊 біля відповіді — прочитаю вголос.\n"
     "Не зрозумію — перепитаю."
 )
@@ -45,7 +48,7 @@ ROUTE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": [
                 "yes", "no", "not_needed", "case_name", "new_task", "edit", "note", "move", "plan_week",
-                "unsure", "help", "working_on", "other",
+                "unsure", "help", "working_on", "schedule", "work_question", "recall", "other",
             ],
         },
         "options": {
@@ -77,6 +80,7 @@ def handle_message(
     deadline = deadline or now + timedelta(seconds=config.request_timeout_s - 2 * config.call_timeout_s)
     clock = clock or (lambda: now)
     replace_asking = False
+    refused_kind: str | None = None
     answer_short = SHORT_ANSWERS.get(reply_to.kind) if reply_to is not None else None
     if reply_to is not None and answer_short is not None:
         found = answer_short(
@@ -84,6 +88,7 @@ def handle_message(
         )
         if found is not None:
             return found
+        refused_kind = reply_to.kind
         reply_to, replace_asking = None, True
     if reply_to is not None and reply_to.kind == "clarify":
         chosen = _chosen(session, reply_to.id, text, ai=ai, store=store)
@@ -100,6 +105,8 @@ def handle_message(
     prompt = _route_prompt(text, reply_to, titles, asked_question)
     answer = ai.generate_json("route", prompt, route_schema(reply_to))
     intent = answer.get("intent")
+    if intent == "schedule" and refused_kind in ("priorities", "limits"):
+        planning.dismiss_asking(session, store=store)
     if intent == "unsure":
         return _clarify(
             session, text, reply_to, answer.get("options"), store=store, now=now,
@@ -150,6 +157,12 @@ def _dispatch(
             session, text, ai=ai, calendar=calendar, store=store, now=now, config=config,
             week=intent == "plan_week", replace_asking=replace_asking,
         )  # fmt: skip
+    if intent == "schedule":
+        return planning.schedule.show(session, text, calendar=calendar, now=now, config=config)
+    if intent == "recall":
+        return case_recall.recall(session, text, store=store, ai=ai, calendar=calendar, now=now)
+    if intent == "work_question":
+        return cases.worklog.answer(session, text, store=store, ai=ai, calendar=calendar, now=now)
     if intent == "working_on":
         return cases.worklog.add(session, text, message_id or uuid.uuid4().hex, store=store, now=now)
     if intent == "note":
@@ -161,7 +174,7 @@ def _dispatch(
 
 
 CASE_ANSWERS = ("yes", "no", "not_needed", "case_name")
-ALWAYS = ("new_task", "plan_week", "note", "move", "working_on")
+ALWAYS = ("new_task", "plan_week", "note", "move", "working_on", "schedule", "work_question", "recall")
 CLARIFY_PATH = "clarify/current"
 PHRASES = {
     "new_task": "поставити задачею в календар",
@@ -174,6 +187,9 @@ PHRASES = {
     "no": "відмовитись",
     "not_needed": "лишити без справи",
     "working_on": "записати, над чим працюєте",
+    "schedule": "показати, що вже заплановано",
+    "work_question": "згадати, що ви робили",
+    "recall": "розповісти, що відомо про справу",
 }
 OPTION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -367,8 +383,10 @@ def _route_prompt(
         "називає задачу з плану з днем чи годиною («лікар о десятій у середу»), — edit, не yes; "
         "new_task — нова задача, якої в плані ще немає; фраза зі «ще», «і ще», «додай», «треба ще» — "
         "new_task, якщо мама не просить спланувати тиждень; "
-        "plan_week — мама просить спланувати тиждень чи дні («сплануй тиждень», «давай планувати», "
-        "«що в мене на тиждень»), навіть з задачами в тій самій фразі; "
+        "schedule — мама питає, що в неї вже заплановано («які плани на сьогодні?», «що в мене на тиждень?», "
+        "«що в мене завтра?»); "
+        "plan_week — лише коли просить спланувати («сплануй тиждень», «давай планувати»), навіть з "
+        "задачами в тій самій фразі; "
         "edit — мама просить змінити показаний план, тобто задачу, яка вже в ньому є (названу хоч одним "
         "словом з її назви): перенести на інший день чи годину (і коротко: «перукар о дев'ятій у п'ятницю», "
         "«аптека на вівторок»), не раніше якоїсь години, прибрати («прибери …», «… не треба»), без часу; "
@@ -376,6 +394,11 @@ def _route_prompt(
         "календар («запиши до …», «запам'ятай, що …»); "
         "working_on — мама каже, над чим зараз працює чи що робить («зараз працюю над …», «я зараз роблю …», "
         "«сиджу над …»); це не нотатка про людину і не задача на потім; "
+        "work_question — мама питає, що вона робила чи над чим працювала («що я робила з договором?», "
+        "«над чим я працювала вчора?»); це не schedule (заплановане в календарі); "
+        "recall — мама питає, що відомо про людину чи справу («що ми знаємо про пані Шмідт?», «що вже "
+        "з'ясували по городу?», «нагадай про пана Коха»); це не note (вона нічого не просить записати) і не "
+        "work_question (питає про справу, не про свою роботу); "
         "help — мама питає, що вміє асистент чи як з ним працювати («що ти вмієш?», «як з тобою працювати?», "
         "«допоможи»); "
         "unsure — фраза справді двозначна між двома наміри (наприклад нотатка про людину з дією — note чи "
@@ -405,7 +428,10 @@ def open_questions(
     now: datetime,
     config: Config,
 ) -> OpenQuestions:
-    """Незакриті питання всіх джерел на відкритті (S4, F3 S3): план і питання справ.
+    """Незакриті питання на відкритті: гайд першого відкриття й питання справ (F3 S3).
+
+    Планування на вступі немає (calm-open, слово власника 2026-11-13): `calendar` і `config` не
+    використовуються, `login_needed` — `False`.
 
     Помилка джерела не забирає інших: джерело пропускається й називається у `failed`. Відповіді без питання
     («увійди знову», «немає вільного часу») — перед питанням, не рахуються; з питань показується одне
@@ -417,17 +443,6 @@ def open_questions(
     guide = _first_open_guide(session, store, now, failed)
     if guide is not None:
         plain.append(guide)
-    try:
-        found = planning.open_question(session, calendar=calendar, store=store, now=now, config=config)
-    except Exception:
-        failed.append("planning")
-    else:
-        if found is not None:
-            login_needed = found.login_needed
-            if found.reply.question is None:
-                plain.append(found.reply)
-            else:
-                asked.append((found.at or now, found.reply))
     try:
         asked += [(item.at, item.reply) for item in cases.open_questions(session, store)]
     except Exception:

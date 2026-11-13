@@ -286,20 +286,29 @@ def test_open_question_shows_the_limits_question() -> None:
     assert plain(opened.reply.text) == ASK_LIMITS_FIRST
 
 
-def test_open_questions_of_the_page_show_the_limits_question() -> None:
+def test_open_questions_of_the_page_do_not_show_the_limits_question() -> None:
     w = limited(task(NOTARY))
-    question = limits_question(w.start())
+    limits_question(w.start())
+    draft = copy.deepcopy(w.store.get(w.session.account_id, planning.DRAFT_PATH))
+    assert draft is not None, "the start of planning must leave a draft that asks the limits question"
 
     # Superseded by guide («Перше відкриття»): an account that has already seen the guide
-    # (`settings/guide_shown` present) gets no guide, so the open lists only the limits question.
+    # (`settings/guide_shown` present) gets no guide.
     w.store.set(w.session.account_id, assistant.GUIDE_PATH, {"shown": "2026-11-01T09:00:00+00:00"})
 
+    # Superseded by calm-open (Seam, I1): the open shows nothing of planning — the limits question
+    # comes only in reply to a message — does not call the Calendar, and leaves the plan draft as it was.
+    calls: list[str] = []
+
     def calendar() -> GoogleWork:
+        calls.append("calendar")
         return cast(GoogleWork, w.calendar)
 
     found = assistant.open_questions(w.session, calendar=calendar, store=w.store, now=NOW, config=w.config)
-    assert [r.question for r in found.replies] == [Question("limits", question.id, None)]
-    assert plain(found.replies[0].text) == ASK_LIMITS_FIRST
+    assert found.replies == []
+    assert found.login_needed is False
+    assert calls == []
+    assert w.store.get(w.session.account_id, planning.DRAFT_PATH) == draft
 
 
 def test_api_message_with_reply_to_limits_returns_the_plan() -> None:

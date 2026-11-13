@@ -65,7 +65,7 @@ def main() -> int:
         answer = ai.generate_json(
             "parse_priorities", planning._priorities_prompt(draft(), text), planning.PRIORITIES_SCHEMA
         )
-        reordered = planning._reordered(draft(), answer)
+        reordered = planning._reordered(draft(), answer) if answer.get("is_answer") is not False else None
         got = [t["title"] for t in reordered] if reordered is not None else None
         ok = got == expected
         failed += not ok
@@ -75,7 +75,7 @@ def main() -> int:
         answer = ai.generate_json(
             "parse_priorities", planning._priorities_prompt(listed, text), planning.PRIORITIES_SCHEMA
         )
-        reordered = planning._reordered(listed, answer)
+        reordered = planning._reordered(listed, answer) if answer.get("is_answer") is not False else None
         got = [t["title"] for t in reordered] if reordered is not None else None
         chosen = [t["title"] for t in reordered or [] if t.get("source") == "tasks" and t["needs_time"]]
         ok = got == expected and chosen == timed

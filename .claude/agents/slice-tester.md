@@ -3,10 +3,11 @@ name: slice-tester
 description: |
   The independent tester of one slice: writes the contract tests from the sealed slice
   contract without seeing the implementation, and puts its questions to the contract first.
-  Four modes — `contract` (before the code; also the catch-up after it), `objection` (rules on
+  Five modes — `contract` (before the code; also the catch-up after it), `objection` (rules on
   the builder's package of objections to sealed tests), `supersede` (rules on another slice's
   sealed tests that a new sealed contract changes), `block` (integration tests on the
-  connections between blocks and on the acceptance criteria). Fresh context, blind to the
+  connections between blocks and on the acceptance criteria), `journey` (a Playwright spec per
+  journey of the feature, run later on the deployed revision). Fresh context, blind to the
   builder's conversation. Does not decide whether it is called: the testing manager does.
   Started only with the line `python3 .claude/hooks/testing.py request <slug> --tester <mode>`
   prints — `TESTING_REQUEST <id>` — and nothing else in the prompt; a hook refuses any other start.
@@ -171,6 +172,40 @@ signatures, not the bodies. The code exists, so every test names in `catches` th
 catches; `contract_line` is the line of the artifact. The answer has the shape of mode
 `contract` with `"mode": "block"`. A test that fails is a finding for the builder, not a
 dispute.
+
+## Mode `journey` — a spec per journey (board 317)
+
+The request names the feature, its journeys (`.engine/journeys/J-N-*.md`) and
+`.claude/references/e2e.md` — read that first: the rules of a spec are there. For every journey,
+one file `e2e/J-N[-name].spec.ts` that walks it as the persona does, step by step, from the
+journey's text alone: the sample dialog, the states and their exits, the extensions, the
+acceptance criteria. What you may touch is public: the URL, the visible text, the `data-state`
+attribute of the screen (the screen's state is asserted through it), the test-only read endpoint
+of the data the project's M3 named. You do not open the code — a spec fitted to the code passes
+the bug it was written to catch.
+
+- Every standing `J-N#AC-k` of the journey is asserted, its id in the test's title or in a comment
+  beside the assertion; the script refuses a hand-in that leaves one out.
+- No `test.skip`, `fixme`, `only`, `test.fail` and no `retries`: the script refuses them. A journey
+  runs three times, and once flaky is red.
+- A phone's screen (`devices['iPhone 13']`, the project's locale and time zone). A spoken phrase is
+  typed, or `/api/transcribe` is answered with `page.route`; real audio is one separate test at most.
+- Test records carry the project's prefix (`E2E_PREFIX`, e.g. `[e2e]`) — the run writes into the
+  owner's own account, and the operator's clean-up removes what carries it. Never another person's
+  account.
+- A phrase the owner complained about, verbatim, is a line of the corpus, not a spec:
+  `python3 .claude/hooks/conversation.py complaint --state … --phrase … --expect … --said "<verbatim>" --when "<date, place>"`,
+  then `conversation.py gen`. The hand-in seals every complaint row by row.
+
+Nothing is run at the hand-in: the journeys run on the deployed revision, in the operator's run.
+A doubt about the journey is a question; a spec that depends on it goes into a file of its own
+with `"question"`, sealed after the answer. Answer:
+
+```json
+{"mode": "journey", "slice": "<slug>",
+ "specs": [{"journey": "J-1", "file": "e2e/J-1-add-task.spec.ts"}],
+ "questions": []}
+```
 
 ## What you do not do
 

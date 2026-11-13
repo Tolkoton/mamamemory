@@ -37,3 +37,22 @@ From: lesson #a1b40aba (overseer, several-tasks, 2026-11-06).
 verify-on-stop fails the turn that ends right after the tester's sealed RED hand-in (contract tests red against the skeleton by design); the gate could treat sealed RED tests of the active slice before its first GREEN as expected, or the builder should not end a turn between seal and GREEN.
 
 From: lesson #850b30ea (gate, note-to-case, 2026-11-07).
+
+## 2026-11-12 — a BLOCK whose fix lies outside the code paths cannot be re-audited
+
+The overseer blocked show-schedule on #1 (the owner's phone-pass card, named by the exit criterion, did not exist). The
+fix is a board card (`tasks/blocked/742-…`), not code; the Stop hook then refuses every new unit claim («no code path
+changed since») and no PASS can be recorded for the slice. A BLOCK on a non-code check (#1 board card, report, PROGRESS)
+could allow a re-claim when the files the BLOCK names changed, not only `SOURCE_DIRS`.
+
+## 2026-11-12 — When a slice's exit criterion names an owner card («прохід власника — картка»), the builde
+
+When a slice's exit criterion names an owner card («прохід власника — картка»), the builder claimed the unit before opening it; the overseer blocked (#1). The Stop hook could check that a card named by the exit criterion exists before taking the claim.
+
+From: lesson #30f9676f (overseer, show-schedule, 2026-11-12).
+
+## 2026-11-12 — A smoke that checks a model reply through one helper (_reordered) can print PASS while the
+
+A smoke that checks a model reply through one helper (_reordered) can print PASS while the production path rejects the same reply on another field (is_answer). A new gate on a model field must also be asserted by every existing smoke of that parse, and the builder must read the model replies in the report, not grep for FAIL.
+
+From: lesson #19a492b9 (overseer, plans-not-questions, 2026-11-12).

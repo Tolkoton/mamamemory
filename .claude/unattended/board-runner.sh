@@ -143,7 +143,10 @@
 # and seals it, or puts the first seal on the document the owner approved — in a new project
 # `board.py architect-task` then puts the /master-architect task, with the owner present, into
 # todo/: board 205), `reseal-contract` (board 308: a sealed slice contract the owner approved again
-# with its change — contract_fingerprint.py seals it anew when it is the text of the question) and
+# with its change — contract_fingerprint.py seals it anew when it is the text of the question),
+# `seal-journey` (board 208: a user journey the owner approved — journeys.py seals it, first or again),
+# `accept-walk` (board 412: the owner walked a journey on the phone — owner_walk.py appends the row to
+# .engine/journeys/acceptance.md, which the runner commits: an agent may not write it) and
 # the gate's `close-escalation` above.
 # The same rule for where the answer came from applies. The offer is then replaced by the
 # outcome and the task returns to todo/ for the agent to check and report; a rule question the
@@ -153,7 +156,7 @@
 # blocked/ when it is stuck. Gate questions and rule questions apart, the runner writes no report
 # and judges no work. It commits nothing
 # but tasks/ and, after apply-settings, .claude/settings.json, after a rule action
-# .engine/rules.md and .engine/rule-proposals.md — and only on the work branch, which must
+# .engine/rules.md and .engine/rule-proposals.md, after accept-walk .engine/journeys/acceptance.md — and only on the work branch, which must
 # be an unattended/* branch: hooks do not see a commit made from a script, so the check is here.
 # (After update-deps the commits — one per update, one for the result — are owner_action.py's own.)
 #
@@ -493,6 +496,14 @@ owner_actions() {
       git commit -q -m "settings: the proposal docs/tasks/settings.json applied on the owner's answer (${name%.md})" -- .claude/settings.json \
         || finish error - commit "cannot commit the applied settings"
       event "commit $(git rev-parse --short HEAD) settings applied"
+    fi
+    if [ "$action" = accept-walk ] && [ "$outcome" = applied ] && git add -- .engine/journeys/acceptance.md \
+        && ! git diff --cached --quiet -- .engine/journeys/acceptance.md; then
+      [ "$(git branch --show-current 2>/dev/null)" = "$BRANCH" ] \
+        || finish error - branch "the checkout left $BRANCH; nothing was committed"
+      git commit -q -m "journeys: the owner's walk accepted on the owner's answer (${name%.md})" -- .engine/journeys/acceptance.md \
+        || finish error - commit "cannot commit the accepted walk"
+      event "commit $(git rev-parse --short HEAD) accept-walk"
     fi
     case "$action" in promote-rule|reject-rule)
       rules=()

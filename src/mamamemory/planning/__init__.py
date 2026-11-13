@@ -22,6 +22,7 @@ from mamamemory.integrations.ai import AI
 from mamamemory.integrations.google_work import GoogleWork, event_id
 from mamamemory.integrations.store import Store
 from mamamemory.planning import plan
+from mamamemory.planning import schedule as schedule  # показ запланованого — `planning.schedule`
 from mamamemory.planning.placement import Interval, Limits, Placement, TaskSpec, place_many
 from mamamemory.replies import PlanView, Question, Reply
 
@@ -76,9 +77,17 @@ TASKS_SCHEMA: dict[str, Any] = {
     "properties": {"tasks": {"type": "array", "items": TASK_DRAFT_SCHEMA}},
     "required": ["tasks"],
 }
+IS_ANSWER_HINT = (
+    "чи мама взагалі відповідає на це питання; питання про плани, справи, роботу, нова задача — false"
+)
+IS_ANSWER_TRUE = (
+    "true — будь-яка відповідь на це питання, зокрема задача зі списку номером чи назвою, прохання поставити "
+    "на час, «так», «все однаково», «не знаю»"
+)
 PRIORITIES_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
+        "is_answer": {"type": "boolean", "description": IS_ANSWER_HINT},
         "same": {"type": "boolean", "description": "true — «все однаково», «не важливо», «не знаю»"},
         "order": {
             "type": "array",
@@ -91,17 +100,18 @@ PRIORITIES_SCHEMA: dict[str, Any] = {
             "description": "номери задач, які мама просить поставити на час",
         },
     },
-    "required": ["same", "order"],
+    "required": ["is_answer", "same", "order"],
 }
 LIMITS_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
+        "is_answer": {"type": "boolean", "description": IS_ANSWER_HINT},
         "same_as_last": {"type": "boolean", "description": "true — «так», «як минулого разу»"},
         "days": {"type": "array", "items": {"type": "integer"}, "description": "0 — понеділок … 6 — неділя"},
         "start_local": {"type": ["string", "null"], "description": "HH:MM"},
         "end_local": {"type": ["string", "null"], "description": "HH:MM"},
     },
-    "required": ["same_as_last", "days", "start_local", "end_local"],
+    "required": ["is_answer", "same_as_last", "days", "start_local", "end_local"],
 }
 EDIT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -437,6 +447,8 @@ def try_answer_priorities(
     if current is None or current.kind != "priorities":
         return _current_reply(deps, draft)
     answer = ai.generate_json("parse_priorities", _priorities_prompt(draft, text), PRIORITIES_SCHEMA)
+    if answer.get("is_answer") is False:
+        return None
     reordered = _reordered(draft, answer)
     if reordered is None:
         return None
@@ -484,6 +496,8 @@ def try_answer_limits(
     if current is None or current.kind != "limits":
         return _current_reply(deps, draft)
     answer = ai.generate_json("parse_limits", _limits_prompt(text), LIMITS_SCHEMA)
+    if answer.get("is_answer") is False:
+        return None
     saved = _saved_limits(deps)
     chosen, changed = _limits_from(answer, saved)
     if chosen is None:
@@ -516,6 +530,13 @@ class OpenQuestion:
     login_needed: bool
     at: datetime | None = field(default=None, compare=False)
     """Час останньої зміни, яку спричинила мама (`asked_at`), — для вибору найновішого питання (F3 S3)."""
+
+
+def dismiss_asking(session: Session, *, store: Store) -> None:
+    """Видалити чернетку плану тижня в стані «питаю» (plans-not-questions); інша — без змін."""
+    draft = store.get(session.account_id, DRAFT_PATH)
+    if draft is not None and draft.get("state") == plan.ASKING and draft.get("mode") == "week":
+        store.delete(session.account_id, DRAFT_PATH)
 
 
 def open_question(
@@ -1193,7 +1214,8 @@ def _limits_prompt(text: str) -> str:
         "same_as_last — true, якщо вона погоджується з минулими межами («так», «як минулого разу»); "
         "days — дні, які вона назвала (0 — понеділок … 6 — неділя; «будні» — 0–4; «щодня» — 0–6; "
         "«крім неділі» — без 6), інакше порожній список; "
-        "start_local і end_local — години (HH:MM), якщо названо, інакше null.\n"
+        "start_local і end_local — години (HH:MM), якщо названо, інакше null. "
+        f"is_answer — {IS_ANSWER_HINT}; {IS_ANSWER_TRUE}.\n"
         f"Відповідь: {text}"
     )
 
@@ -1238,7 +1260,8 @@ def _priorities_prompt(draft: dict[str, Any], text: str) -> str:
         "same — true, якщо мама каже «все однаково», «не важливо», «не знаю»; "
         "timed — номери задач, які мама просить поставити на час, інакше порожній список. "
         "Номер, названий лише «на час», не додавай в order — "
-        "order тільки для того, що мама назвала важливішим.\n"
+        "order тільки для того, що мама назвала важливішим (у «спершу X, а Y теж на час» Y — лише в timed). "
+        f"is_answer — {IS_ANSWER_HINT}; {IS_ANSWER_TRUE}.\n"
         f"Відповідь: {text}"
     )
 

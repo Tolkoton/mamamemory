@@ -20,7 +20,6 @@ from tests.guide_world import (
     GUIDE_PATH,
     NEW_CANNOT,
     SHOWN_BEFORE,
-    SIGN_IN_AGAIN,
     Guide,
     flag_writes,
     guide_reply,
@@ -39,8 +38,8 @@ WEEK = timedelta(days=7)
 
 
 def with_sign_in_and_case() -> Guide:
-    """A pending note «a1» an hour before NOW and a shown plan: the open with LoginExpired gives a plain
-    «увійди знову» and the case question."""
+    """A pending note «a1» an hour before NOW and a shown plan. Since calm-open the open shows nothing of the
+    plan: even with LoginExpired it gives only the case question (no «увійди знову», `login_needed` False)."""
     g = Guide()
     g.pending_note("a1", SCHMIDT, NOW - HOUR)
     shown(g.plan.start())
@@ -73,18 +72,17 @@ def test_seam1_first_open_without_the_flag_is_the_guide_alone_and_writes_the_fla
 def test_seam1_guide_stands_before_every_item_and_the_question_stays_last() -> None:
     g = with_sign_in_and_case()
     result = g.open(NOW + MINUTE, LoginExpired())
-    assert len(result.replies) == 3, result.replies
+    assert len(result.replies) == 2, result.replies
     guide_reply(result.replies[0])
-    assert result.replies[1:] == [Reply(SIGN_IN_AGAIN), Reply(ask(SCHMIDT), case_q("a1"))]
-    assert result.login_needed is True
-    # A shown plan's question: the guide first, the plan question last with its own reply_to.
+    assert result.replies[1:] == [Reply(ask(SCHMIDT), case_q("a1"))]
+    assert result.login_needed is False
+    # A shown plan alone (calm-open): the open is the guide alone, no plan and no plan question.
     p = Guide()
-    plan_id, fingerprint = shown(p.plan.start())
+    shown(p.plan.start())
     opened = p.open(NOW + MINUTE)
-    assert len(opened.replies) == 2, opened.replies
+    assert len(opened.replies) == 1, opened.replies
     guide_reply(opened.replies[0])
-    assert opened.replies[-1].question == Question("plan", plan_id, fingerprint)
-    assert opened.replies[-1].plan is not None
+    assert opened.login_needed is False
 
 
 def test_seam1_second_open_has_no_guide_and_the_items_as_before() -> None:
@@ -92,7 +90,8 @@ def test_seam1_second_open_has_no_guide_and_the_items_as_before() -> None:
     first = g.open(NOW + MINUTE, LoginExpired())
     assert guides(first.replies) == 1, first.replies
     second = g.open(NOW + HOUR, LoginExpired())
-    assert second.replies == [Reply(SIGN_IN_AGAIN), Reply(ask(SCHMIDT), case_q("a1"))]
+    assert second.replies == [Reply(ask(SCHMIDT), case_q("a1"))]
+    assert second.login_needed is False
     assert "guide" not in second.failed
     empty = Guide()
     assert guides(empty.open(NOW).replies) == 1
@@ -103,7 +102,7 @@ def test_seam1_with_the_accounts_flag_there_is_no_guide_and_the_flag_is_kept() -
     g = with_sign_in_and_case()
     g.mark_shown()
     result = g.open(NOW + MINUTE, LoginExpired())
-    assert result.replies == [Reply(SIGN_IN_AGAIN), Reply(ask(SCHMIDT), case_q("a1"))]
+    assert result.replies == [Reply(ask(SCHMIDT), case_q("a1"))]
     assert "guide" not in result.failed
     assert g.flag() == SHOWN_BEFORE
     # The flag is the account's: another account over the same store has none and gets its guide.
@@ -125,9 +124,9 @@ def test_seam1_flag_read_failure_shows_no_guide_keeps_the_items_and_names_guide_
     g = with_sign_in_and_case()
     g.store.fail_read = True
     result = g.open(NOW + MINUTE, LoginExpired())
-    assert result.replies == [Reply(SIGN_IN_AGAIN), Reply(ask(SCHMIDT), case_q("a1"))]
+    assert result.replies == [Reply(ask(SCHMIDT), case_q("a1"))]
     assert "guide" in result.failed
-    assert result.login_needed is True
+    assert result.login_needed is False
     empty = Guide()
     empty.store.fail_read = True
     alone = empty.open(NOW)
@@ -139,19 +138,19 @@ def test_seam1_flag_write_failure_shows_the_guide_and_the_next_open_shows_it_aga
     g = with_sign_in_and_case()
     g.store.fail_write = True
     first = g.open(NOW + MINUTE, LoginExpired())
-    assert len(first.replies) == 3, first.replies
+    assert len(first.replies) == 2, first.replies
     guide_reply(first.replies[0])
-    assert first.replies[1:] == [Reply(SIGN_IN_AGAIN), Reply(ask(SCHMIDT), case_q("a1"))]
+    assert first.replies[1:] == [Reply(ask(SCHMIDT), case_q("a1"))]
     assert "guide" in first.failed
     assert g.flag() is None
     g.store.fail_write = False
     second = g.open(NOW + HOUR, LoginExpired())
-    assert len(second.replies) == 3, second.replies
+    assert len(second.replies) == 2, second.replies
     guide_reply(second.replies[0])
-    assert second.replies[1:] == [Reply(SIGN_IN_AGAIN), Reply(ask(SCHMIDT), case_q("a1"))]
+    assert second.replies[1:] == [Reply(ask(SCHMIDT), case_q("a1"))]
     assert "guide" not in second.failed
     third = g.open(NOW + 2 * HOUR, LoginExpired())
-    assert third.replies == [Reply(SIGN_IN_AGAIN), Reply(ask(SCHMIDT), case_q("a1"))]
+    assert third.replies == [Reply(ask(SCHMIDT), case_q("a1"))]
 
 
 def test_seam1_each_account_has_its_own_guide() -> None:

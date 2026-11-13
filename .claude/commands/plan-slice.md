@@ -250,6 +250,12 @@ Use `Write` to create `.engine/slices/$ARGUMENTS.md` with this structure
   - Source: [the line it follows from]
   - Broken by: [the wrong implementation it would catch]
 
+## Conversation delta (only where `.engine/architecture/conversation-model.json` exists)
+[the states, intents and pending questions this slice adds or changes, each pending question with its way out
+(answer kinds, «not an answer → new command», ≤ 2 re-asks, exit) and each new intent with its neighbours — the
+model already changed and `conversation.py check` clean; or `немає — <why the slice changes no conversation>`.
+A slice that adds an intent, a `reply_to` kind or a question the model lacks is refused by the Stop gate.]
+
 ## Exit criterion
 [specific observable — named test(s) + the real-environment smoke test script that closes the slice (slice-builder requires a passing smoke); threshold owner-ratified if present]
 

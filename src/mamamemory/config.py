@@ -35,6 +35,8 @@ DEFAULT_MODELS: Mapping[str, ModelChoice] = {
     "choose_material": ModelChoice("gemini-3.8-flash"),
     "choose_option": ModelChoice("gemini-3.5-flash-lite"),
     "transcribe": ModelChoice("gemini-3.8-flash"),
+    "answer_work": ModelChoice("gemini-3.5-flash-lite"),
+    "answer_case": ModelChoice("gemini-3.5-flash-lite"),
 }
 
 

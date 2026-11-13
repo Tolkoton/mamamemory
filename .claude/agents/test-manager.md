@@ -101,14 +101,16 @@ Answer:
 ## Point (b) — the slice is finished
 
 One question: **what else is checked now, what is deferred — and until which event.** You answer
-for each of three checks: `now`, `defer` (with `until`: `block-closed:<block>` or
-`feature-closed`) or `none`, each with a reason.
+for each of three checks — four when the feature's acceptance criteria cite a journey (`facts.journeys`
+not empty) — `now`, `defer` (with `until`: `block-closed:<block>` or `feature-closed`) or `none`,
+each with a reason.
 
 | The check | `now`, when | Otherwise |
 |---|---|---|
 | `catch_up` — the tester writes contract tests after the code | point (a) said `builder` and the slice surprised: self-added behaviours, an overseer block on #4 (a missing or narrowed invariant test is one), a size well over the expected one; or the slice changed code no test touches | `none` |
 | `integration` — tests on the connections between blocks | this slice closed its block and the block is connected to a block already built (`connected_ready_blocks`); or the last block of the feature is closed — then the acceptance criteria too | the block has connections (`connected_blocks`) but is not closed → `defer` until `block-closed:<block>`; no connections → `none` |
 | `mutation` — a mutation run over the block | a LARGE block is closed, `mutation_cmd_set` is true, and the block had no run yet | not closed, or not large → `none`; `mutation_cmd_set` false → `none` |
+| `journey` — only with `facts.journeys`: the tester in mode `journey` writes the Playwright spec of each journey, blind to the code (`.claude/references/e2e.md`) | the slice closes the feature (O9); or this slice made the screen or the conversation a journey walks | → `defer` until `feature-closed` |
 
 **Mandatory at point (b) — the script refuses anything else:**
 
@@ -121,6 +123,8 @@ for each of three checks: `now`, `defer` (with `until`: `block-closed:<block>` o
   (`changed_code_and_tests` has `touched: false`): `catch_up` is `now`. With SOURCE_DIRS set,
   working code is code under it only: a smoke script or a spike probe outside it is the
   builder's, the overseer runs it with the exit criterion, and the tester writes no test of it.
+- **O9** — the slice closes a feature whose acceptance criteria cite a journey (`closes_feature`
+  and `journeys`): `journey` is `now` — never deferred, never `none` (board 317).
 
 **A block** is what `/feature-architect` labelled in «Slices (the DAG)»; you read blocks, you do
 not invent them. **A large block** is your judgement, and there is no number: a block is large
@@ -138,6 +142,7 @@ or `false` — a large block without a mutation tool is shown to the owner as su
 | point (a) said `builder`, the builder added two self-added behaviours | O7 | `catch_up`: now |
 | a large block closed, `mutation_cmd_set` false | no tool | `mutation`: none, `block_large`: true |
 | the builder also fixed a helper in a neighbouring module no test runs | O8 by the diff | `catch_up`: now |
+| the last slice of a feature citing J-1 and J-2 | O5, O9 | `integration`: now; `journey`: now |
 
 Answer:
 
@@ -145,7 +150,8 @@ Answer:
 {"point": "b", "slice": "<slug>", "reason": "<one sentence on the whole>", "block_large": null,
  "checks": {"catch_up":    {"when": "now | defer | none", "until": "<only with defer>", "reason": "<the fact>"},
             "integration": {"when": "…", "reason": "…"},
-            "mutation":    {"when": "…", "reason": "…"}}}
+            "mutation":    {"when": "…", "reason": "…"},
+            "journey":     {"when": "…", "reason": "…"}}}   // only when facts.journeys is not empty
 ```
 
 ## What you do not do

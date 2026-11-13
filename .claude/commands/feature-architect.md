@@ -18,6 +18,12 @@ Pre-flight:
   script is the sanctioned path). Clear it at the end with `... overseer_phase.py clear`.
 - Read the **domain map** and **architecture map** (`.engine/architecture/*`) to place
   this feature in the existing system.
+- **The owner's walk (board 412).** `python3 .claude/hooks/owner_walk.py gate $ARGUMENTS`. Exit 0 → go on.
+  Exit 3: a feature built before this one waits for the owner to walk its journey on the phone — internal stage,
+  the core journey whenever it changed; production, every journey people see (the owner's «За стадією»). Attended:
+  tell the owner what to walk (the card: `owner_walk.py walk-card j-N`). Unattended: the card is in
+  `tasks/blocked/` (write it when it is not), emit `OVERSEER_SLICE_AWAITING_OWNER: owner walk J-N` — reason (1) to
+  stop — and go to work that does not cross it: E2E, other journeys at design level, debts. The feature does not start.
 - `python3 .claude/hooks/goals.py status`. The document the owner approved → read
   `.engine/goals.md` (level 0: goals G, principles P, non-goals N, constraints C, done-when D);
   you never write it. No approved document → warn the owner in one line that this feature
@@ -32,10 +38,23 @@ Unattended, Phase 1 does not ask and does not block. Derive the frame from the
 domain map, the architecture map, and the existing code; write it into the
 feature artifact; mark every item the owner would have ratified as
 `PROVISIONAL — owner ratification pending` with its cost-to-reverse; and start
-the autonomous run. The two HARD GATEs below (1b acceptance criteria, 1e autonomy
+the autonomous run. **PROVISIONAL is for technical build parameters only (board 412)**: acceptance criteria,
+user-visible behaviour, user-visible thresholds and limits (a voice-over length, a journal's span, how the
+person is addressed), and «out of scope» for a must-be of the product's kind are never provisional — the
+feature parks with the question. The seal refuses a contract under criteria marked PROVISIONAL or
+`[NEEDS CLARIFICATION`, or with an item that cites no `J-N#AC-k`, no G/D line, no dated owner's words and is
+not `[тех]` (`contract_fingerprint.py`, `stage.py seal`). The two HARD GATEs below (1b acceptance criteria, 1e autonomy
 grant) become parks: the feature proceeds on the provisional frame, and the
 ratification is a question on the task board for the owner's return
 (`python3 .claude/unattended/board.py open-item --to blocked …`).
+
+**Except — the journeys (board 208).** A feature a person sees or talks to takes its acceptance
+criteria from the sealed journeys (`.engine/journeys/`), verbatim, as `J-N#AC-k`; they are not
+PROVISIONAL, they are the owner's. A user-visible behaviour or threshold that no sealed journey has is
+never given a provisional value: `python3 .claude/hooks/journeys.py gate` not 0, or a criterion the
+feature needs that no journey holds → park the feature with a journey draft and a question to the owner
+(`/journey-architect`, «Without the owner») — the owner's answer «Ні, паркує». Technical criteria (`[тех]`)
+are framed as below.
 
 **Except** — a frame item that is a genuine one-way door (a price, a published
 contract, an irreversible data decision, anything spending money or touching a
@@ -57,7 +76,9 @@ without stopping. Walk these one at a time, pushing back on vagueness.
 this feature done and acceptable? Product calls (Art. 5) — the owner sets them; you do
 not invent thresholds. **HARD GATE: do not proceed until ratified.** Each criterion cites the
 goal or done-when it serves (G…, D…); a criterion with no line behind it is a NEW product
-decision — put it to the owner as such, never slip it in.
+decision — put it to the owner as such, never slip it in. With journeys, a product criterion is a
+journey's `J-N#AC-k` copied verbatim; one no journey holds is a change of the journey first
+(`/journey-architect`), and a technical criterion is marked `[тех]`.
 
 **1c — Out of scope (explicit, non-empty).** What this feature deliberately does NOT do.
 
@@ -105,6 +126,14 @@ After this round, the owner is not prompted again except for the critical interr
 ---
 
 # Phases 2-4 — AUTOMATED decompose → contracts → sequence
+
+**A conversational product: the model first (board 209).** When `.engine/architecture/conversation-model.json`
+exists, a feature that adds a state, an intent or a pending question changes the model **before** any slice:
+write the change into the JSON and the owner's `.md` (`.claude/references/conversation-model.md`), put the diff
+into the feature file's «Conversation delta», and run `python3 .claude/hooks/conversation.py check` until it
+is clean — then decompose. A new intent names its neighbours (`confused_with`) and the phrases it may steal; a
+new question has its answer kinds, «not an answer → new command», ≤ 2 re-asks and its exit. A threshold no
+goals line holds is `[owner decision needed]`, never a number of yours.
 
 Draft all three phases, then put the WHOLE plan before the critic. **A plan gets at most two
 critic rounds** — in total, not per phase (owner's rule: the critic runs on the session's
@@ -165,7 +194,8 @@ written down and decided in the open, never dropped.
 # Tracer-bullet gate  (the integration premise check — constitution Art. 1)
 
 After `sequence` converges, the DAG names a **tracer bullet**: the thinnest end-to-end
-slice chain. Build it FIRST, through the normal slice flow (`/plan-slice` →
+slice chain — for a feature with a journey, the chain that walks its journey's steps from the first to
+the last (board 208), not a chain of layers. Build it FIRST, through the normal slice flow (`/plan-slice` →
 slice-builder), before committing the rest of the DAG.
 
 - Tracer bullet runs end-to-end → the integration premise is **verified**; mark the
@@ -226,8 +256,13 @@ shape is a published contract.
 - S1 → S2: [the exact type/shape S1 produces that S2 consumes]
 - (...one per DAG edge...)
 
+## Conversation delta (a conversational product only)
+[the states, intents and pending questions this feature adds or changes, as in the model's JSON — each new
+intent with its neighbours, each question with its way out; «немає» when the feature changes no conversation]
+
 ## Integration exit criterion
-[the tracer bullet runs end-to-end AND the acceptance criteria are met — name the smoke/path that proves it]
+[the tracer bullet runs end-to-end AND the acceptance criteria are met — name the smoke/path that proves it; with
+journeys, name them and the corpus lines: «J-N green 3/3 on the tagged revision, corpus green» (`testing.py journey-close`)]
 
 ## Deferred to later features
 - [item] — why later: [reason] — revisit trigger: [...]
@@ -289,12 +324,32 @@ Then resume autonomously. Emit `OVERSEER_SLICE_AWAITING_OWNER:` on any pause.
    decision of point (b), and no testing debt whose event has come is left unrun. On a refusal
    do what it lists (the manager's point (b), the deferred check) — a feature is not reported
    built over it.
+0b. A feature whose acceptance criteria cite a journey: `python3 .claude/hooks/testing.py journey-close
+   $ARGUMENTS` must exit 0 — its journeys green 3/3 on the deployed tagged revision and, with a
+   conversation model, the corpus green with the real model (`.claude/references/e2e.md`). The deploy
+   and the run are the operator's: until its results are in `.engine/e2e/<sha>/`, the feature waits
+   in `tasks/blocked/` («чекає journey-close на деплої») with the request `journey_e2e.py request`
+   prints — passed to the operator only on the owner's word — and a feature that depends on it does
+   not start. Evidence in the ledger entry below: «journeys J-… green 3/3 on rev <sha>».
+0c. The owner's walk (board 412), with the user-walker before it (board 318). First, for each journey the
+   feature cites: `python3 .claude/hooks/walker.py gate j-N`. While the walker is off (no calibration passed)
+   it says so and exits 0 — go on. When it is on: `walker.py request j-N --persona <slug> --url <deploy>`, launch
+   the agent `user-walker` three times with the line `walker.py status` shows, and decide every finding —
+   a test that reproduces it (then a fix at the level of the journey), a rejection with its reason, or a
+   product question parked for the owner (`walker.py dispose`) — until the gate exits 0. The condition is
+   «the walk took place and every finding has its decision», never «the walker said PASS». Then, for each
+   journey the stage requires a walk of
+   (`owner_walk.py status`), `python3 .claude/hooks/owner_walk.py walk-card j-N` — the card with the steps
+   in the owner's words goes to `tasks/blocked/` with `Дія runner-а: accept-walk j-N <sha256>`. The owner's
+   «так» accepts it (the runner); any other answer is feedback for `/owner-feedback`. The next feature's
+   pre-flight waits for it. The card carries the walker's last walk of the journey (`walker.py`): where it got stuck,
+   for the owner to look at first.
 1. Add a ledger entry — on stdin to `python3 .claude/hooks/journal.py add ledger`, which writes it into this
    session's own file of the ledger (board 739; never edit the shared `.engine/overseer/ledger.md`):
    ```
    ## <ISO timestamp UTC> — feature:$ARGUMENTS — FEATURE_COMPLETE
    - Trigger: /feature-architect
-   - Evidence: .engine/architecture/feature/$ARGUMENTS.md ; all N slices smoke-green
+   - Evidence: .engine/architecture/feature/$ARGUMENTS.md ; all N slices smoke-green ; journeys J-… green 3/3 on rev <sha> (0b, when it cites any)
    - Action: N slices planned+built, tracer verified, K critic rounds, J interrupts
    - Category: strategy
    ```

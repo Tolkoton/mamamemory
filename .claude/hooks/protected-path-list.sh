@@ -93,6 +93,10 @@ GUARDED_PATTERNS=(
   # contract sealed after the critic's objections waits for the owner (stage.py), so an agent that
   # could write this file could take the owner's review away. Reading it stays free.
   '(^|/)\.claude/project-stage$'
+  # The owner's walks (board 412): a row here lets the next feature start after the owner walked a
+  # journey on the phone. Only owner_walk.py writes it, run by the board runner on the owner's «так»
+  # (owner_action.py accept-walk), and the runner commits it. Reading it stays free.
+  '(^|/)\.engine/journeys/acceptance\.md$'
   '(^|/)\.git/'
   '(^|/)migrations/.*\.py$'
   '(^|/)alembic/versions/.*\.py$'
