@@ -1,0 +1,216 @@
+LENS: code
+SCOPE: src
+
+DETERMINISTIC SIGNALS (cite a signal by its id):
+[
+ {
+  "id": "S-c99f8a5e",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/assistant.py",
+  "line": 65,
+  "message": "handle_message: complexity 19, the limit is 10"
+ },
+ {
+  "id": "S-c0e000cc",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/assistant.py",
+  "line": 122,
+  "message": "_dispatch: complexity 23, the limit is 10"
+ },
+ {
+  "id": "S-27cd33d9",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/cases/__init__.py",
+  "line": 398,
+  "message": "move_material: complexity 13, the limit is 10"
+ },
+ {
+  "id": "S-407eae74",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 175,
+  "message": "start: complexity 28, the limit is 10"
+ },
+ {
+  "id": "S-56409514",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 280,
+  "message": "try_answer_duration: complexity 12, the limit is 10"
+ },
+ {
+  "id": "S-ecaf1d2f",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 310,
+  "message": "try_answer_when: complexity 12, the limit is 10"
+ },
+ {
+  "id": "S-748fd7d2",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 376,
+  "message": "confirm: complexity 12, the limit is 10"
+ },
+ {
+  "id": "S-4a127ee8",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 569,
+  "message": "try_answer_limits: complexity 11, the limit is 10"
+ },
+ {
+  "id": "S-21bcd38e",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 771,
+  "message": "_refresh: complexity 13, the limit is 10"
+ },
+ {
+  "id": "S-13df214b",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 793,
+  "message": "_found_own: complexity 18, the limit is 10"
+ },
+ {
+  "id": "S-1877a53e",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 864,
+  "message": "_plan_text: complexity 12, the limit is 10"
+ },
+ {
+  "id": "S-05c878ca",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 909,
+  "message": "_write: complexity 11, the limit is 10"
+ },
+ {
+  "id": "S-c436fcb5",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 936,
+  "message": "_write_tasks: complexity 11, the limit is 10"
+ },
+ {
+  "id": "S-6d40337f",
+  "tool": "ast",
+  "kind": "nesting",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 991,
+  "message": "_transact.decide: nesting 4, the limit is 3"
+ },
+ {
+  "id": "S-8537f12c",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 1272,
+  "message": "_limits_from: complexity 19, the limit is 10"
+ },
+ {
+  "id": "S-a9da53b1",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 1336,
+  "message": "_reordered: complexity 21, the limit is 10"
+ },
+ {
+  "id": "S-509614e3",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/placement.py",
+  "line": 104,
+  "message": "place_many: complexity 13, the limit is 10"
+ },
+ {
+  "id": "S-a44a008a",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/placement.py",
+  "line": 137,
+  "message": "_windows: complexity 16, the limit is 10"
+ },
+ {
+  "id": "S-b1593ebf",
+  "tool": "ast",
+  "kind": "complexity",
+  "file": "src/mamamemory/planning/plan.py",
+  "line": 26,
+  "message": "decide: complexity 17, the limit is 10"
+ },
+ {
+  "id": "S-244418ab",
+  "tool": "vulture",
+  "kind": "dead-code",
+  "file": "src/mamamemory/integrations/google_auth.py",
+  "line": 36,
+  "message": "unused variable 'email_verified' (60% confidence)"
+ },
+ {
+  "id": "S-cca419b5",
+  "tool": "vulture",
+  "kind": "dead-code",
+  "file": "src/mamamemory/planning/__init__.py",
+  "line": 30,
+  "message": "unused variable 'TASK_ID' (60% confidence)"
+ },
+ {
+  "id": "S-f8fe5b4f",
+  "tool": "pyproject",
+  "kind": "unused-dependency",
+  "file": "pyproject.toml",
+  "line": 16,
+  "message": "tzdata is declared and no module named tzdata is imported"
+ },
+ {
+  "id": "S-b4ba60e6",
+  "tool": "pyproject",
+  "kind": "unused-dependency",
+  "file": "pyproject.toml",
+  "line": 17,
+  "message": "uvicorn is a runtime dependency imported only by tests: tests/test_smoke_script.py"
+ },
+ {
+  "id": "S-09943780",
+  "tool": "history",
+  "kind": "trend",
+  "file": null,
+  "line": null,
+  "message": "lines grew from 3227 (median of the last 4 runs) to 4956"
+ },
+ {
+  "id": "S-2fbef21e",
+  "tool": "history",
+  "kind": "trend",
+  "file": null,
+  "line": null,
+  "message": "functions grew from 211 (median of the last 4 runs) to 312"
+ },
+ {
+  "id": "S-5f70a5c3",
+  "tool": "history",
+  "kind": "trend",
+  "file": null,
+  "line": null,
+  "message": "complexity grew from 9.5 (median of the last 4 runs) to 18"
+ }
+]
+
+Answer with the JSON list of findings and nothing else.

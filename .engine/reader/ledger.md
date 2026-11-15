@@ -41,3 +41,8 @@
 - Record: tasks/done/403-maintain-2026-11-15/report.md
 - Reason: All four questions hold. Every file, line, number and commit I checked matches what the report says about it. The task's two «Готово, коли» items are answered: the maintenance report is written, and the task goes to done/ because maintain.py question gave nothing to update. There is no open question for the owner, and the engine terms in the report are in English.
 - Request: 20261115T113142Z-ed758d (attempt 1)
+
+## 2026-11-15T11:45:33Z — 404-cleanup-2026-11-15 — READER_PASS
+- Record: tasks/done/404-cleanup-2026-11-15/report.md
+- Reason: All four checks pass. Every reference I could check matches its source. Each item of «Що зробити» and «Готово, коли» is answered: the nightly output is recorded, the run is done, nothing was auto_remove so nothing was removed, and the confirm finding is left for the owner. There are no open questions for the owner. Engine terms (simplifier, lens, commit, tokens, reversal risk) stay in English.
+- Request: 20261115T114406Z-0d8b8a (attempt 1)

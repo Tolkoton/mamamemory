@@ -61,3 +61,12 @@ Nothing listed here was removed.
   - test safety none, reversal risk low, protected false, traces to: none found (not a template section; the decision traces to escalations 2026-11-11, which already carries it)
 
 ### flag_only (0)
+
+## 2026-11-15T11:43:35Z — code, nightly 2026-11-15
+
+### confirm (1)
+- `F-c4d6a784` **src/mamamemory/planning/__init__.py:30** — dead_code: The module constant TASK_ID = "t1" is never read anywhere in src, tests or scripts, and the literal "t1" appears nowhere else in src. Removing it changes nothing. It looks like a leftover from the one-task F1 draft, which the module docstring says is now a list.
+  - evidence: signal S-cca419b5 vulture: unused variable 'TASK_ID' (60% confidence); grep src/mamamemory/planning/__init__.py:30 'TASK_ID' appears only at its definition across the repository, apart from the maintenance report tasks/done/403-maintain-2026-11-15/report.md:17,36, which already recommends removing it; read src/mamamemory/planning/__init__.py:1-6 the docstring says the F1 single task is now a list of one; no comment explains why the constant should stay
+  - test safety characterization_exists, reversal risk low, protected false, traces to: none found
+
+### flag_only (0)
