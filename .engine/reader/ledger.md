@@ -36,3 +36,8 @@
 - Record: tasks/done/715-open-item-reseal-s1-s3/report.md
 - Reason: The references I could check all hold. The ledger entries at 22:48:59Z, 22:49:19Z, 22:51:34Z and 23:09:17Z say what the report says. The seal files show 11 and 6 sealed files and the access-shell `resealed` entry for card 715. Commit db058f2 is in the git reflog with the subject «→ doing». The task's only item (carry out the owner's «так» and report it) is done, and the report has no open question. Technical terms in the report are in English (gate, audit, slice, runner, reseal, contract tests, commit).
 - Request: 20261106T231016Z-b759ac (attempt 1)
+
+## 2026-11-15T11:33:00Z — 403-maintain-2026-11-15 — READER_PASS
+- Record: tasks/done/403-maintain-2026-11-15/report.md
+- Reason: All four questions hold. Every file, line, number and commit I checked matches what the report says about it. The task's two «Готово, коли» items are answered: the maintenance report is written, and the task goes to done/ because maintain.py question gave nothing to update. There is no open question for the owner, and the engine terms in the report are in English.
+- Request: 20261115T113142Z-ed758d (attempt 1)
