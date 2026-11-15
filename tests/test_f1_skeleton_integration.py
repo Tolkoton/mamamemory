@@ -10,7 +10,7 @@ through `/auth/login` and `/auth/callback` (S1), never with a hand-made cookie.
 """
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -35,11 +35,17 @@ SUB_A = "1000000000000000001"
 SUB_B = "2000000000000000002"
 MAMA = "mama@example.com"
 STRANGER = "stranger.person@gmail.com"
-ASK_DURATION = f"Скільки часу займе «{TITLE}»?"
+ASK_WHEN = f"Коли «{TITLE}»? Скажіть день і годину."
 SIGN_IN_AGAIN = "Щоб показати план, увійди знову."
 TRACER = "у четвер о десятій на пів години подзвонити нотаріусу"
-NO_LENGTH = "у четвер о десятій подзвонити нотаріусу"
-HALF_HOUR = "пів години"
+NO_TIME = "подзвонити нотаріусу"
+AT_TEN = "у четвер о десятій"
+TRACER_THREE = "у четвер о третій на пів години подзвонити нотаріусу"
+THURSDAY = "2026-11-12"
+THURSDAY_TEN = "2026-11-12T10:00"
+THURSDAY_THREE = "2026-11-12T15:00"
+THURSDAY_FOUR = "2026-11-12T16:00"
+BERLIN_ZONE = timezone(timedelta(hours=1))  # Europe/Berlin in November
 SONKO_DEPLOY = Path.home() / "sonko" / "done" / "2026-11-11-mamamemory-f5-deploy.md"
 BASE32HEX = re.compile(r"[0-9a-v]+")
 
@@ -92,12 +98,14 @@ class TwoPeople:
 
 
 class VoiceAI(FakeAI):
-    """`FakeAI` for the text models (route answers `self.intent`); a real `google-genai` client for voice."""
+    """`FakeAI` for the text models (route answers `self.intent`, `parse_when` answers `self.when`);
+    a real `google-genai` client for voice."""
 
-    def __init__(self, gemini: Gemini, *, duration_min: int | None) -> None:
-        super().__init__(duration_min=duration_min)
+    def __init__(self, gemini: Gemini, *, duration_min: int | None, start_local: str | None) -> None:
+        super().__init__(duration_min=duration_min, start_local=start_local)
         self.gemini = gemini
         self.intent = "new_task"
+        self.when: dict[str, Any] = {"is_answer": True, "day": THURSDAY, "start_local": THURSDAY_TEN}
         self.prompts: list[tuple[str, str]] = []
         self._client: Any = None
 
@@ -106,6 +114,9 @@ class VoiceAI(FakeAI):
         if task_type == "route":
             self.calls.append(task_type)
             return {"intent": self.intent}
+        if task_type == "parse_when":
+            self.calls.append(task_type)
+            return dict(self.when)
         return super().generate_json(task_type, prompt, schema)
 
     def client(self) -> Any:
@@ -117,12 +128,18 @@ class VoiceAI(FakeAI):
 class F1App:
     """The whole skeleton as deployed, fakes at its edges; each browser signs in through Google (S1)."""
 
-    def __init__(self, *heard: str, duration_min: int | None = 30, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        *heard: str,
+        duration_min: int | None = 30,
+        start_local: str | None = THURSDAY_TEN,
+        clock: Clock | None = None,
+    ) -> None:
         self.config: Config = make_config()
         self.store = RecordingStore()
         self.google = TwoPeople()
         self.gemini = Gemini(*heard)
-        self.ai = VoiceAI(self.gemini, duration_min=duration_min)
+        self.ai = VoiceAI(self.gemini, duration_min=duration_min, start_local=start_local)
         self.calendars = {SUB_A: FakeCalendar(), SUB_B: FakeCalendar()}
         self.built: list[tuple[str, str]] = []
         self.clock = clock or Clock(NOW)
@@ -224,7 +241,8 @@ def test_S1_to_S3_session_gives_the_plan_its_account_its_own_google_credentials_
     assert any(op == "transact" for op, _ in touched), touched
 
     # The weekly Google sign-in runs out: `google_credentials` raises LoginExpired, nothing is written.
-    again = f1.message(a, TRACER, message_id="m2")["plan"]
+    f1.ai.task["start_local"] = THURSDAY_THREE
+    again = f1.message(a, TRACER_THREE, message_id="m2")["plan"]
     assert again is not None
     f1.google.expired.add(SUB_A)
     refused = confirm(a, again)
@@ -259,32 +277,37 @@ def test_S1_to_S2_voice_request_one_is_under_the_same_sign_in_check() -> None:
 
 
 def test_S2_to_S3_recognised_text_goes_as_request_two_with_its_reply_to() -> None:
-    f1 = F1App(NO_LENGTH, HALF_HOUR, duration_min=None)
+    # Superseded by add-simply (Seam): «додай задачу» asks no duration; a task with no time gets «коли?»,
+    # and the recognised answer goes back with that question as its reply_to.
+    f1 = F1App(NO_TIME, AT_TEN, duration_min=None, start_local=None)
     a = f1.sign_in("A")
 
     first = f1.transcribe(a)
     assert first.status_code == 200, first.text
     text = first.json()["text"]
-    assert isinstance(text, str) and text == NO_LENGTH
+    assert isinstance(text, str) and text == NO_TIME
 
     asked = f1.message(a, text, None, "m1")
     parsed = [prompt for kind, prompt in f1.ai.prompts if kind == "parse_task"]
-    assert parsed and NO_LENGTH in parsed[-1], "the recognised text did not reach the task parse"
+    assert parsed and NO_TIME in parsed[-1], "the recognised text did not reach the task parse"
     question = asked["question"]
-    assert question is not None and question["kind"] == "duration", asked
+    assert question is not None and question["kind"] == "when", asked
+    assert asked["text"] == ASK_WHEN, asked
     assert asked["plan"] is None
 
     second = f1.transcribe(a)
     assert second.status_code == 200, second.text
     answer = second.json()["text"]
-    assert answer == HALF_HOUR
+    assert answer == AT_TEN
     planned = f1.message(a, answer, question, "m2")
-    assert any(kind == "parse_duration" and HALF_HOUR in prompt for kind, prompt in f1.ai.prompts), (
+    assert any(kind == "parse_when" and AT_TEN in prompt for kind, prompt in f1.ai.prompts), (
         "the recognised answer was not read as the answer to its question"
     )
     plan = planned["plan"]
     assert plan is not None and plan["title"] == TITLE, planned
     assert planned["question"] == plan_question(plan)
+    start = datetime(2026, 11, 12, 10, 0, tzinfo=BERLIN_ZONE)
+    assert (instant(plan["start"]), instant(plan["end"])) == (start, start + timedelta(minutes=60)), plan
 
 
 def test_S3_to_S4_open_question_is_built_from_the_plan_draft() -> None:
@@ -315,7 +338,8 @@ def test_S3_to_S4_open_question_is_built_from_the_plan_draft() -> None:
     assert f1.open(a)["replies"] == []
 
     # A shown plan whose Google sign-in ran out: the open does not ask to sign in again.
-    assert f1.message(a, TRACER, message_id="m3")["plan"] is not None
+    f1.ai.task["start_local"] = THURSDAY_THREE
+    assert f1.message(a, TRACER_THREE, message_id="m3")["plan"] is not None
     f1.google.expired.add(SUB_A)
     resp = a.get("/api/open")
     assert resp.status_code == 200, resp.text
@@ -423,32 +447,48 @@ def test_AC3_proposed_time_one_duration_question_yes_writes_once() -> None:
     f1.message(a, "так", plan_question(plan), "m-yes")
     assert len(calendar.created) == 1, "a repeated «так» creates no second event"
 
-    # The second run: no duration in the phrase -> one question about it -> its answer -> the plan.
+    # Superseded by add-simply (Seam): the second run names a time but no duration -> the plan at once,
+    # no duration question, the task takes ADD_DEFAULT_MIN (60).
     f1.ai.intent = "new_task"
     f1.ai.task["duration_min"] = None
-    asked = f1.message(a, NO_LENGTH, None, "m2")
-    assert asked["text"] == ASK_DURATION, asked
-    assert asked["plan"] is None
-    question = asked["question"]
-    assert question is not None and question["kind"] == "duration"
-    planned = f1.message(a, HALF_HOUR, question, "m3")
-    plan2 = planned["plan"]
-    assert plan2 is not None and planned["question"] == plan_question(plan2), "one question, then the plan"
+    f1.ai.task["start_local"] = THURSDAY_THREE
+    straight = f1.message(a, "у четвер о третій подзвонити нотаріусу", None, "m2")
+    plan2 = straight["plan"]
+    assert plan2 is not None and straight["question"] == plan_question(plan2), straight
+    three = datetime(2026, 11, 12, 15, 0, tzinfo=BERLIN_ZONE)
+    assert (instant(plan2["start"]), instant(plan2["end"])) == (three, three + timedelta(minutes=60)), plan2
     assert confirm(a, plan2).json()["text"] == WRITTEN
     assert len(calendar.created) == 2
+
+    # The third run: no time in the phrase -> one question «коли?» -> its answer -> the plan.
+    f1.ai.task["start_local"] = None
+    f1.ai.when = {"is_answer": True, "day": THURSDAY, "start_local": THURSDAY_FOUR}
+    asked = f1.message(a, NO_TIME, None, "m3")
+    assert asked["text"] == ASK_WHEN, asked
+    assert asked["plan"] is None
+    question = asked["question"]
+    assert question is not None and question["kind"] == "when"
+    planned = f1.message(a, "у четвер о четвертій", question, "m4")
+    plan3 = planned["plan"]
+    assert plan3 is not None and planned["question"] == plan_question(plan3), "one question, then the plan"
+    four = datetime(2026, 11, 12, 16, 0, tzinfo=BERLIN_ZONE)
+    assert (instant(plan3["start"]), instant(plan3["end"])) == (four, four + timedelta(minutes=60)), plan3
+    assert confirm(a, plan3).json()["text"] == WRITTEN
+    assert len(calendar.created) == 3
 
 
 def test_AC4_closed_midway_the_next_open_shows_the_unclosed_plan() -> None:
     # Superseded by calm-open (Seam, I1): AC4 of f1-skeleton is withdrawn — the next open shows no plan and
     # does not change the draft; the unclosed plan returns in reply to mama's message.
-    f1 = F1App(duration_min=None)
+    # Superseded by add-simply (Seam): the question left open midway is «коли?», not the duration.
+    f1 = F1App(duration_min=None, start_local=None)
     a = f1.sign_in("A")
     f1.guide_seen(SUB_A)
     cookie = a.cookies.get("mm_session")
     assert cookie
 
-    asked = f1.message(a, NO_LENGTH)["question"]
-    assert asked is not None and asked["kind"] == "duration"
+    asked = f1.message(a, NO_TIME)["question"]
+    assert asked is not None and asked["kind"] == "when"
     reopened = f1.browser()  # the app was closed: a new page with the same session
     reopened.cookies.set("mm_session", cookie)
     mark = len(f1.store.touched)
@@ -456,7 +496,7 @@ def test_AC4_closed_midway_the_next_open_shows_the_unclosed_plan() -> None:
     assert opened["replies"] == [] and opened["login_needed"] is False, opened
     assert [op for op, _ in f1.store.touched[mark:] if op != "get"] == [], "the open changes no plan draft"
 
-    plan = f1.message(reopened, HALF_HOUR, asked, "m2")["plan"]
+    plan = f1.message(reopened, AT_TEN, asked, "m2")["plan"]
     assert plan is not None and plan["title"] == TITLE
     again = f1.browser()
     again.cookies.set("mm_session", cookie)

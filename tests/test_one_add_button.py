@@ -3,8 +3,9 @@
 
 Written by the slice tester from the sealed contract `.engine/slices/one-add-button.md`, without the code.
 The two guide lines before the 🔊 line follow the sealed contract `.engine/slices/case-recall.md`
-(supersede of `NEW_GUIDE`). The `accept` of `#add-input` is the one the sealed contract photo-and-file
-names for «+». The check of
+(supersede of `NEW_GUIDE`); the tasks line just before the 🔊 line follows the sealed contract
+`.engine/slices/tasks-list.md` (supersede of `NEW_GUIDE`).
+The `accept` of `#add-input` is the one the sealed contract photo-and-file names for «+». The check of
 `app.js` is static and strict, as Seam 1 asks: comments and the text of strings are not code; the field of
 `add-input` is found by its id (or through a literal pair `["add", "add-input"]` a loop takes apart), the
 button `add` must open that same field on click, and a `change` listener of that same field must call
@@ -37,6 +38,7 @@ NEW_GUIDE = (
     "• «Переклади … до …» — перенесу в іншу справу.\n"
     "• «Працюю над …», потім «що я робила з …?» — запам'ятаю й нагадаю.\n"
     "• «Що ми знаємо про пані Шмідт?», «які плани на тиждень?» — розповім.\n"
+    "• «Які в мене задачі?» — покажу список задач.\n"
     "• 🔊 біля відповіді — прочитаю вголос.\n"
     "Не зрозумію — перепитаю."
 )

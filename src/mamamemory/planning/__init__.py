@@ -48,10 +48,15 @@ CHOOSE_TIMED = "Назвіть і ті, що поставити на час."
 TO_TASKS = "Задачі без часу — у Tasks."
 PLAN_WRITTEN = "План записано."
 NO_WEEK_TASKS = "Задач на тиждень немає — скажіть, що треба зробити."
+ASK_WHICH_TASK = "Яку задачу додати?"
+ADD_REQUEST_WORDS = frozenset(
+    "додай додати додайте додавай таску таск задачу завдання справу нову ще одну будь ласка".split()
+)
 PLAN_REQUEST_WORDS = frozenset(
     "що в у мене мені мої мій які який на цей цьому цього наступний наступного весь цілий давай "
     "дні днів два три і а ще є маю буде".split()
 )
+ADD_DEFAULT_MIN = 60  # PROVISIONAL — owner ratification pending (add-simply)
 ASK_LIMITS_FIRST = "Коли ви взагалі можете робити задачі? Наприклад: будні з дев'ятої до шостої."
 LIMITS_PATH = "planning/limits"
 NOT_UNDERSTOOD_EDIT = "Не зрозуміла правку, скажіть ще раз."
@@ -127,6 +132,16 @@ EDIT_SCHEMA: dict[str, Any] = {
     },
     "required": ["number", "kind", "day", "start_local", "not_before_local"],
 }
+WHEN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "is_answer": {"type": "boolean"},
+        "day": {"type": ["string", "null"]},
+        "start_local": {"type": ["string", "null"]},
+    },
+    "required": ["is_answer", "day", "start_local"],
+}
+
 DURATION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {"duration_min": {"type": ["integer", "null"]}},
@@ -178,6 +193,8 @@ def start(
     if current is not None and plan.is_fresh_write(current, now, config.request_timeout_s):
         return Reply(WRITING_NOW)
     drafts = _parse_tasks(ai, text, now, _zone(deps))
+    if week is False and drafts and all(_is_add_request(d["title"]) for d in drafts):
+        return Reply(ASK_WHICH_TASK)
     if week:
         drafts = [d for d in drafts if not _is_plan_request(d["title"])]
     if not drafts and week is not True:
@@ -223,6 +240,12 @@ def _with_week_tasks(deps: Deps, draft: dict[str, Any]) -> dict[str, Any]:
     order = _next_order(draft)
     renumbered = [t | {"task_id": f"t{len(tasks) + n + 1}", "order": order + n} for n, t in enumerate(fresh)]
     return _with_tasks(draft, tasks + renumbered)
+
+
+def _is_add_request(title: str) -> bool:
+    """Сама просьба «додай таску» без задачі (add-simply): у назві лише слова просьби."""
+    words = re.findall(r"[\w'ʼ]+", title.casefold())
+    return bool(words) and all(w in ADD_REQUEST_WORDS for w in words)
 
 
 def _is_plan_request(title: str) -> bool:
@@ -284,6 +307,72 @@ def try_answer_duration(
     return _advance(deps, _with_tasks(draft, updated))
 
 
+def try_answer_when(
+    session: Session,
+    plan_id: str,
+    text: str,
+    *,
+    ai: AI,
+    calendar: GoogleWork,
+    store: Store,
+    now: datetime,
+    config: Config,
+) -> Reply | None:
+    """Відповідь на «Коли «X»?» режиму «додай задачу» (add-simply): дата й час — задачі; лише день — питання
+    години; без дня й часу — те саме питання; не відповідь — `None` (чернетка без змін)."""
+    deps = Deps(calendar, store, now, config, session.account_id)
+    draft = store.get(session.account_id, DRAFT_PATH)
+    if draft is not None and _too_old_to_answer(draft, now):
+        return None
+    if draft is None or draft.get("plan_id") != plan_id or draft.get("state") != plan.ASKING:
+        return Reply(NOT_ACTUAL)
+    current = _asked(config, draft)
+    if current is None or current.kind != "when":
+        return _current_reply(deps, draft)
+    asked = _missing_when(draft)[0]
+    answer = ai.generate_json("parse_when", _when_prompt(text, asked, now, _zone(deps)), WHEN_SCHEMA)
+    if answer.get("is_answer") is not True:
+        return None
+    updated = _when_task(asked, answer)
+    if updated is None:
+        return _question_reply(deps, draft)
+    tasks = [updated if t["task_id"] == asked["task_id"] else t for t in tasks_of(draft)]
+    return _advance(deps, _with_tasks(draft, tasks))
+
+
+def _when_task(task: dict[str, Any], answer: dict[str, Any]) -> dict[str, Any] | None:
+    """Задача з відповіддю на «коли?»: дата й час, лише день чи `None` (нічого не названо)."""
+    start_local, day = _start_local(answer.get("start_local")), _day(answer.get("day"))
+    if start_local is not None:
+        day = start_local[:10]
+        return task | {"start_local": start_local, "constraints": task["constraints"] | {"day": day}}
+    if day is not None:
+        return task | {"constraints": task["constraints"] | {"day": day}}
+    return None
+
+
+def _when_prompt(text: str, task: dict[str, Any], now: datetime, tz: ZoneInfo) -> str:
+    """Підказка розбору відповіді на «коли?»: «зараз» у зоні календаря, дні тижня, задача й відомий день."""
+    now = now.astimezone(tz)
+    days = "; ".join(
+        f"{WEEKDAYS[(now + timedelta(days=n)).weekday()]} — {(now + timedelta(days=n)).date().isoformat()}"
+        for n in range(8)
+    )
+    day = task["constraints"].get("day")
+    known = f" День уже відомий: {day}." if day else ""
+    return (
+        f"Асистент спитав маму, коли зробити задачу «{task['title']}».{known}\n"
+        f"Зараз {now.isoformat()} (зона {tz.key}). Дні: {days}. "
+        "Назва дня тижня без «наступного» — найближчий такий день, сьогоднішній теж.\n"
+        "is_answer — чи мама взагалі відповідає, коли (день, година, «будь-коли», «не знаю» — true; "
+        "питання про плани, нова задача, інша справа — false); "
+        "start_local — дата й час (YYYY-MM-DDTHH:MM), лише якщо мама назвала годину "
+        "(з відомим днем — цього дня), інакше null; "
+        "day — дата (YYYY-MM-DD), якщо мама назвала день, інакше null.\n"
+        f"Мама: {text}"
+    )
+
+
 def confirm(
     session: Session,
     plan_id: str,
@@ -325,9 +414,12 @@ def confirm(
 def next_question(
     draft: dict[str, Any], *, ask_limits: bool = False, ask_priorities: bool = False
 ) -> Question | None:
-    """Наступне коротке питання над чернеткою (F2): важливість → тривалості → межі; `None` — показ плану."""
-    week = draft.get("mode") != "add"
-    if week and ask_priorities and len(_listed(draft)) >= 2 and not draft.get("priorities_answered"):
+    """Наступне коротке питання над чернеткою (F2): важливість → тривалості → межі; `None` — показ плану.
+
+    «Додай задачу» (`mode == "add"`, add-simply) — лише «коли?» для задачі на час без названого часу."""
+    if draft.get("mode") == "add":
+        return Question("when", draft["plan_id"], None) if _missing_when(draft) else None
+    if ask_priorities and len(_listed(draft)) >= 2 and not draft.get("priorities_answered"):
         return Question("priorities", draft["plan_id"], None)
     if _missing_duration(tasks_of(draft)):
         return Question("duration", draft["plan_id"], None)
@@ -638,6 +730,11 @@ def _question_reply(deps: Deps, draft: dict[str, Any]) -> Reply:
         saved = _saved_limits(deps)
         text = ASK_LIMITS_FIRST if saved is None else f"Як минулого разу — {_limits_text(saved)}?"
         return Reply(text, question)
+    if question.kind == "when":
+        task = _missing_when(draft)[0]
+        if task["constraints"].get("day"):
+            return Reply(f"О котрій годині «{task['title']}»?", question)
+        return Reply(f"Коли «{task['title']}»? Скажіть день і годину.", question)
     missing = _missing_duration(tasks_of(draft))
     text = f"Скільки часу займе «{missing[0]['title']}»?"
     return Reply(text, question)
@@ -650,6 +747,15 @@ def _current_reply(deps: Deps, draft: dict[str, Any]) -> Reply:
     if draft.get("state") == plan.SHOWN and draft.get("fingerprint"):
         return Reply(PLAN_SHOWN, Question("plan", draft["plan_id"], draft["fingerprint"]))
     return Reply(NOT_ACTUAL)
+
+
+def _missing_when(draft: dict[str, Any]) -> list[dict[str, Any]]:
+    """Задачі «додай» на час без названого часу й без правки часу (add-simply) — у порядку `order`."""
+    return [
+        t
+        for t in _open_tasks(draft)
+        if t["needs_time"] and not t.get("start_local") and not t.get("when_set") and not _in_tasks(t)
+    ]
 
 
 def _missing_duration(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -987,17 +1093,21 @@ def _decide_task_written(snapshot: dict[str, Any] | None, details: dict[str, Any
 
 def _normalized(task: dict[str, Any]) -> dict[str, Any]:
     """Задача у форматі F2; поля, яких немає в документі S3, — за замовчуванням (на час, без дня)."""
-    return {
-        "task_id": task["task_id"],
-        "title": task["title"],
-        "needs_time": task.get("needs_time", True),
-        "duration_min": task.get("duration_min"),
-        "start_local": task.get("start_local"),
-        "constraints": task.get("constraints") or {"day": None},
-        "order": task.get("order", int(str(task["task_id"]).lstrip("t") or 1) - 1),
-        "source": task.get("source", "speech"),
-        "written": task.get("written") or {"event_id": None, "tasks_id": None, "closed": False},
-    } | ({"origin_tasks_id": task["origin_tasks_id"]} if task.get("origin_tasks_id") else {})
+    return (
+        {
+            "task_id": task["task_id"],
+            "title": task["title"],
+            "needs_time": task.get("needs_time", True),
+            "duration_min": task.get("duration_min"),
+            "start_local": task.get("start_local"),
+            "constraints": task.get("constraints") or {"day": None},
+            "order": task.get("order", int(str(task["task_id"]).lstrip("t") or 1) - 1),
+            "source": task.get("source", "speech"),
+            "written": task.get("written") or {"event_id": None, "tasks_id": None, "closed": False},
+        }
+        | ({"origin_tasks_id": task["origin_tasks_id"]} if task.get("origin_tasks_id") else {})
+        | ({"when_set": True} if task.get("when_set") else {})
+    )
 
 
 def _with_tasks(draft: dict[str, Any], tasks: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1070,7 +1180,7 @@ def _task_spec(task: dict[str, Any]) -> TaskSpec:
     return TaskSpec(
         task["task_id"],
         task["title"],
-        int(task["duration_min"]),
+        int(task["duration_min"] or ADD_DEFAULT_MIN),
         start_local,
         date.fromisoformat(day) if day else None,
         _hhmm(not_before) if not_before else None,
@@ -1294,6 +1404,7 @@ def _edit_task(task: dict[str, Any], kind: str, answer: dict[str, Any]) -> dict[
             return None
         return task | {
             "start_local": None,
+            "when_set": True,
             "constraints": constraints | {"not_before_local": f"{not_before:%H:%M}"},
         }
     start_local, day = _start_local(answer.get("start_local")), _day(answer.get("day"))
@@ -1305,7 +1416,12 @@ def _edit_task(task: dict[str, Any], kind: str, answer: dict[str, Any]) -> dict[
             "constraints": constraints | {"day": start_local[:10]},
         }
     if day is not None:
-        return task | {"needs_time": True, "start_local": None, "constraints": constraints | {"day": day}}
+        return task | {
+            "needs_time": True,
+            "start_local": None,
+            "when_set": True,
+            "constraints": constraints | {"day": day},
+        }
     return None
 
 

@@ -6,6 +6,8 @@ Written by the slice tester from the sealed contract `.engine/slices/guide.md`, 
 `NOW` is Monday 9 November 2026, 10:07 Berlin (09:07Z).
 The case line of `GUIDE` follows the sealed contract `.engine/slices/one-add-button.md` (supersede of guide).
 The two lines before the 🔊 line follow the sealed contract `.engine/slices/case-recall.md` (supersede).
+The tasks line, the one right before the 🔊 line, follows the sealed contract `.engine/slices/tasks-list.md`
+(supersede).
 Every text is written by hand from the contract.
 The contract does not fix the apostrophe's typography nor whitespace around the guide (question Q1 of this
 slice): `is_guide` reads the text with its apostrophes made one character and its ends stripped.
@@ -36,6 +38,7 @@ GUIDE = (
     "• «Переклади … до …» — перенесу в іншу справу.\n"
     "• «Працюю над …», потім «що я робила з …?» — запам'ятаю й нагадаю.\n"
     "• «Що ми знаємо про пані Шмідт?», «які плани на тиждень?» — розповім.\n"
+    "• «Які в мене задачі?» — покажу список задач.\n"
     "• 🔊 біля відповіді — прочитаю вголос.\n"
     "Не зрозумію — перепитаю."
 )

@@ -291,3 +291,58 @@
 - Smoke: Сонько (`~/sonko/done/2026-11-13-mamamemory-calm-open-deploy.md`): 16 smoke мови — `SMOKE PASSED`; викладка,
   smoke_access_shell — `SMOKE PASSED`; `/api/guide` без входу — 401.
 - Open: P-TASKS-DUE `unverified` — прохід власника, картка 751.
+
+## Slice add-simply (DONE — DEPLOYED rev mamamemory-00035-pjq, 2026-11-14)
+
+- Owner's word 2026-11-14: «Додати таску, а не мудрувати. Питати коли, спитати в котрій годині»; «Що я вмію» —
+  відкрилося, схлопнулося. Режим `add`: без питань тривалості, меж, важливості; без часу — «коли?» (`try_answer_when`,
+  `parse_when`); 60 хв за замовчуванням (PROVISIONAL); «додай таску» — «Яку задачу додати?»; правки `not_before` /
+  `move` з днем — `when_set`, без питання. Гайд — один блок `#guide`, `nextGuide`.
+- Tests: 25 контрактних (tester; Q1, Q2 — `taken`); supersede 47 тестів (stuck-question 26, add-or-plan 9,
+  skeleton-measure 7, clarify 2, plans-not-questions 2, calm-open 1); 915 pytest + 67 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-14-mamamemory-add-simply-deploy.md`): `smoke_add_simply.py` 9/9 і 16 smoke мови
+  — `SMOKE PASSED`; викладка, smoke_access_shell — `SMOKE PASSED`.
+- Open: прохід власника і 60 хв — картка 752.
+
+## Slice one-message (DONE — DEPLOYED rev mamamemory-00036-vvw, 2026-11-14)
+
+- Owner's word 2026-11-14: «достатньо одного повідомлення» («Цей план уже записано.» ×5). `web/buttons.js`
+  `bindButtons` — одна сторожа на кнопки повідомлення: вимкнені під час запиту, зникають після успіху, вмикаються
+  після збою; `post` ловить збій мережі; `NOT_SENT.failed`; маршрут `/buttons.js`.
+- Tests: 12 контрактних (tester); 919 pytest + 75 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-14-mamamemory-one-message-deploy.md`): smoke_guide, smoke_access_shell —
+  `SMOKE PASSED`; `/buttons.js` без входу — 302.
+- Open: прохід власника — картка 754.
+
+## Slice tasks-list (DONE — DEPLOYED rev mamamemory-00037-xt8, 2026-11-14)
+
+- Owner's question 2026-11-14: «як мама має його питати, що він видав нормальні таски?» Намір `tasks` («які в мене
+  задачі?», «що в списку справ?», «покажи задачі») → `schedule.tasks`: усі відкриті задачі Google Tasks, з датою «до
+  …»; рядок у гайді.
+- Tests: 14 контрактних (tester; Q1, Q2 — `taken`); supersede 17 (guide 11 — через guide_world, case-recall 1,
+  one-add-button 1, clarify 1; f5 і calm-open — через спільний гайд); 936 pytest + 75 node.
+- Smoke: перша спроба — `smoke_move_material.py` «нотатку про часник перенеси в город» → edit (нова підказка
+  зсунула); підказку `move` уточнено; друга — 18 smoke `SMOKE PASSED`, викладка; контрольний прогін на тому самому
+  файлі — move 3 × PASS.
+- Open: прохід власника — картка в tasks/blocked (tasks-list-phone).
+
+## Slice dialog (DONE — DEPLOYED rev mamamemory-00038-mn6, 2026-11-14)
+
+- Owner's word 2026-11-14: «щоб це був як діалог», «Діалог дальше не працює.» `web/dialog.js` `mineText`; `app.js`
+  `renderMine` — мамин абзац `p.mine` (праворуч, зелений) перед відповіддю: сказане — до запиту, кнопка — з
+  відповіддю, файл — «📎 назва»; маршрут `/dialog.js`.
+- Tests: 24 контрактні (tester; Q1–Q5, Q7, Q8 — `taken`); 950 pytest + 85 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-14-mamamemory-dialog-deploy.md`): smoke_guide, smoke_access_shell — `SMOKE
+  PASSED`; `/dialog.js` без входу — 302.
+- Open: прохід власника — картка dialog-phone.
+
+## Slice agenda-card (DONE — DEPLOYED rev mamamemory-00039-dss, 2026-11-15)
+
+- Owner's word 2026-11-15: календар і задачі «віджетом» → варіант 2 (картка в застосунку), «показувати коли питають».
+  `Reply.card` (`Card` / `CardSection` / `CardItem`) у `schedule.show` і `schedule.tasks`; `_reply_json` прибирає
+  `card: None`; `web/card.js` `buildCard`; `app.js` `show` малює картку замість абзацу, 🔊 — той самий текст; стилі
+  `.card`; маршрут `/card.js`.
+- Tests: 16 контрактних (tester; Q1 — `taken`); 963 pytest + 88 node.
+- Smoke: Сонько (`~/sonko/done/2026-11-15-mamamemory-agenda-card-deploy.md`): smoke_schedule, smoke_tasks_list,
+  smoke_guide, smoke_access_shell — `SMOKE PASSED`; `/card.js` без входу — 302.
+- Open: прохід власника — картка agenda-card-phone.

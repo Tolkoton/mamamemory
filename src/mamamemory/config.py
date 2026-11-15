@@ -24,6 +24,7 @@ class ModelChoice:
 DEFAULT_MODELS: Mapping[str, ModelChoice] = {
     "parse_task": ModelChoice("gemini-3.5-flash-lite"),
     "parse_duration": ModelChoice("gemini-3.5-flash-lite"),
+    "parse_when": ModelChoice("gemini-3.5-flash-lite"),
     "route": ModelChoice("gemini-3.5-flash-lite"),
     "parse_limits": ModelChoice("gemini-3.5-flash-lite"),
     "parse_priorities": ModelChoice("gemini-3.5-flash-lite"),

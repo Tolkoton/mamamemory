@@ -2,9 +2,11 @@
 `assistant` — Seam 1, Seam 2, Seam 3, I1, I2.
 
 Written by the slice tester from the sealed contract `.engine/slices/add-or-plan.md`, without the code.
-`NOW` is Monday 9 November 2026, 10:07 Berlin (CET, UTC+1): the first free step is 10:15 Berlin = 09:15Z.
-Limits «weekdays 14:00–18:00» put a task at 14:00 Berlin = 13:00Z at the earliest, 18:00 Berlin = 17:00Z at
-the latest. Every time below is written by hand in UTC.
+Rewritten by the tester of `.engine/slices/add-simply.md` (supersession): a «додай» draft asks no duration and
+no limits — a task with a named time is planned at once (60 minutes when none is named), one without a time
+is asked «коли?».
+`NOW` is Monday 9 November 2026, 10:07 Berlin (CET, UTC+1). Tuesday 10 November 10:00 Berlin = 09:00Z,
+12:00 Berlin = 11:00Z, 15:00 Berlin = 14:00Z. Every time below is written by hand in UTC.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -20,32 +22,48 @@ from tests.add_or_plan_world import (
     add_or_plan,
     no_priorities,
 )
-from tests.google_tasks_world import BILLS, PARCEL
+from tests.add_simply_world import AddSimply, WhenAI, ask_when, when
+from tests.google_tasks_world import BILLS, PARCEL, TasksCalendar
 from tests.priorities_world import listed, priorities_question
 from tests.several_tasks_world import DOCTOR, MEDICINE, NOTARY, SISTER, items, task
 from tests.test_one_task_planning import instant, shown
-from tests.time_limits_world import (
-    AGAIN_PREFIX,
-    ASK_LIMITS_FIRST,
-    WEEKDAYS,
-    limits_question,
-    parsed,
-    plain,
-)
+from tests.time_limits_world import AGAIN_PREFIX, WEEKDAYS, RecordingStore, limits_question
 
-AFTERNOONS = parsed(days=WEEKDAYS, start_local="14:00", end_local="18:00")
+TUE_10 = "2026-11-10T10:00"
+TUE_12 = "2026-11-10T12:00"
+TUE_15 = "2026-11-10T15:00"
+WED_10 = "2026-11-11T10:00"
+WED_15 = "2026-11-11T15:00"
+THU_10 = "2026-11-12T10:00"
+THU_15 = "2026-11-12T15:00"
 
 
 def utc(day: int, hour: int, minute: int = 0) -> datetime:
     return datetime(2026, 11, day, hour, minute, tzinfo=UTC)
 
 
-def within_afternoons(reply: Reply) -> None:
-    """Every timed item of the plan lies inside Monday 14:00–18:00 Berlin (13:00Z–17:00Z)."""
-    found = items(reply)
-    assert found, f"expected timed items, got {reply!r}"
-    for title, (start, end) in found.items():
-        assert utc(9, 13) <= instant(start) and instant(end) <= utc(9, 17), (title, start, end)
+def at(title: str, start_local: str, duration_min: int | None = 30) -> dict[str, object]:
+    """A spoken task with a named time."""
+    return task(title, start_local=start_local, duration_min=duration_min)
+
+
+def with_when(*open_tasks: TaskItem, ask_limits: bool = False) -> AddSimply:
+    """The add-or-plan world (Tasks on, priorities on) that also answers «коли?» through `try_answer_when`."""
+    return AddSimply(
+        WhenAI(), TasksCalendar(*open_tasks, honour_409=True), RecordingStore(), ask_limits, True, True
+    )
+
+
+def no_duration_nor_limits(reply: Reply | None) -> None:
+    assert reply is not None
+    assert reply.question is None or reply.question.kind not in ("duration", "limits"), reply
+    assert "Скільки часу" not in reply.text, reply.text
+    assert "Коли ви взагалі можете" not in reply.text, reply.text
+
+
+def placed(reply: Reply, title: str) -> tuple[datetime, datetime]:
+    start, end = items(reply)[title]
+    return instant(start), instant(end)
 
 
 # ------------------------------------------------------------------ Seam 1: «додати»
@@ -53,8 +71,9 @@ def within_afternoons(reply: Reply) -> None:
 
 def test_seam1_add_reads_no_tasks_asks_no_priorities_and_shows_the_plan_at_once() -> None:
     w = add_or_plan(TK_BILLS, TK_PARCEL)
-    reply = w.add(task(NOTARY), task(MEDICINE))
+    reply = w.add(at(NOTARY, TUE_10), at(MEDICINE, TUE_12))
     no_priorities(reply)
+    no_duration_nor_limits(reply)
     assert w.tc.list_calls == 0
     assert set(items(reply)) == {NOTARY, MEDICINE}, reply
     assert BILLS not in reply.text and PARCEL not in reply.text, reply.text
@@ -62,19 +81,29 @@ def test_seam1_add_reads_no_tasks_asks_no_priorities_and_shows_the_plan_at_once(
     assert w.mode() == "add"
 
 
-def test_seam1_add_without_a_duration_asks_the_duration_not_the_priorities() -> None:
-    w = add_or_plan(TK_BILLS)
-    reply = w.add(task(NOTARY, duration_min=None), task(MEDICINE))
+def test_seam1_add_without_a_duration_asks_no_duration_nor_priorities() -> None:
+    # A task with a time and no duration is placed for 60 minutes; one with no time is asked «коли?».
+    w = with_when(TK_BILLS)
+    reply = w.add(at(NOTARY, TUE_10, duration_min=None), task(MEDICINE))
     no_priorities(reply)
-    assert reply.question is not None and reply.question.kind == "duration", reply
+    no_duration_nor_limits(reply)
+    assert reply.question is not None and reply.question.kind == "when", reply
+    assert ask_when(MEDICINE) in reply.text, reply.text
     assert reply.plan is None
+    plan = w.answer_when(
+        reply.question.id, when(day="2026-11-10", start_local=TUE_12), "у вівторок о дванадцятій"
+    )
+    assert plan is not None
+    shown(plan)
+    assert placed(plan, NOTARY) == (utc(10, 9), utc(10, 10))
+    assert placed(plan, MEDICINE) == (utc(10, 11), utc(10, 11, 30))
     assert w.tc.list_calls == 0
 
 
 def test_seam1_add_appended_to_an_unwritten_add_draft_reads_no_tasks() -> None:
     w = add_or_plan(TK_BILLS)
-    shown(w.add(task(NOTARY)))
-    again = w.add(task(MEDICINE), text="і ще купити ліки", now=utc(9, 9, 8))
+    shown(w.add(at(NOTARY, TUE_10)))
+    again = w.add(at(MEDICINE, TUE_12), text="і ще купити ліки", now=utc(9, 9, 8))
     no_priorities(again)
     assert w.tc.list_calls == 0
     assert w.titles() == [NOTARY, MEDICINE]
@@ -85,25 +114,21 @@ def test_seam1_add_appended_to_an_unwritten_add_draft_reads_no_tasks() -> None:
 def test_seam1_add_with_saved_limits_applies_them_without_a_question() -> None:
     w = add_or_plan(TK_BILLS, ask_limits=True)
     w.seed_limits(WEEKDAYS, "14:00", "18:00")
-    reply = w.add(task(NOTARY))
+    reply = w.add(at(NOTARY, TUE_15))
     assert AGAIN_PREFIX not in reply.text, reply.text
+    no_duration_nor_limits(reply)
     assert reply.question is not None and reply.question.kind == "plan", reply
-    start, end = items(reply)[NOTARY]
-    assert (instant(start), instant(end)) == (utc(9, 13), utc(9, 13, 30))
-    draft = w.draft()
-    assert draft is not None and draft.get("limits_answered") is True, draft
+    assert placed(reply, NOTARY) == (utc(10, 14), utc(10, 14, 30))
 
 
-def test_seam1_add_without_saved_limits_asks_the_first_limits_question_once() -> None:
+def test_seam1_add_without_saved_limits_asks_no_limits_question() -> None:
     w = add_or_plan(TK_BILLS, ask_limits=True)
-    reply = w.add(task(NOTARY), task(MEDICINE))
-    question = limits_question(reply)
+    reply = w.add(at(NOTARY, TUE_10), at(MEDICINE, TUE_12))
     no_priorities(reply)
-    assert plain(reply.text) == plain(ASK_LIMITS_FIRST), reply.text
-    w.ai.limits = dict(AFTERNOONS)
-    plan = w.answer_limits(question.id, "будні з другої до шостої")
-    shown(plan)
-    within_afternoons(plan)
+    no_duration_nor_limits(reply)
+    shown(reply)
+    assert placed(reply, NOTARY) == (utc(10, 9), utc(10, 9, 30))
+    assert placed(reply, MEDICINE) == (utc(10, 11), utc(10, 11, 30))
     assert w.tc.list_calls == 0
 
 
@@ -136,7 +161,7 @@ def test_seam2_week_true_reads_tasks_and_asks_the_priorities_as_f2() -> None:
 
 def test_seam2_week_appended_to_an_add_draft_turns_it_into_week_with_tasks_once() -> None:
     w = add_or_plan(TK_BILLS, TK_BILLS)
-    shown(w.add(task(NOTARY)))
+    shown(w.add(at(NOTARY, TUE_10)))
     assert w.tc.list_calls == 0
     again = w.plan_week(task(MEDICINE), text="давай планувати тиждень: ще купити ліки", now=utc(9, 9, 8))
     priorities_question(again)
@@ -235,61 +260,70 @@ def test_I1_add_never_reads_tasks_nor_asks_what_is_most_important() -> None:
     w = add_or_plan(TK_BILLS, TK_PARCEL)
     replies = [w.add(text="додай")]
     assert w.tc.list_calls == 0
-    replies.append(w.add(task(NOTARY)))
-    replies.append(w.add(task(MEDICINE), task(SISTER), text="і ще ліки і сестра", now=utc(9, 9, 8)))
-    replies.append(w.add(task(NOTARY), text="і ще нотаріус", now=utc(9, 9, 9)))
+    replies.append(w.add(at(NOTARY, TUE_10)))
+    replies.append(
+        w.add(at(MEDICINE, TUE_12), at(SISTER, WED_10), text="і ще ліки і сестра", now=utc(9, 9, 8))
+    )
+    replies.append(w.add(at(NOTARY, TUE_10), text="і ще нотаріус", now=utc(9, 9, 9)))
     _never_tasks_nor_priorities(w, replies)
     assert w.mode() == "add"
     # Three at once; then «так»; then a new «додай» on a fresh draft.
     w = add_or_plan(TK_BILLS, TK_PARCEL)
-    first = w.add(task(NOTARY), task(MEDICINE), task(DOCTOR))
+    first = w.add(at(NOTARY, TUE_10), at(MEDICINE, TUE_12), at(DOCTOR, WED_10))
     plan_id, fingerprint = shown(first)
     done = w.confirm(plan_id, fingerprint)
-    later = w.add(task(SISTER), task(MEDICINE), text="додай сестру і ліки", now=utc(9, 9, 20))
+    later = w.add(at(SISTER, THU_10), at(MEDICINE, THU_15), text="додай сестру і ліки", now=utc(9, 9, 20))
     _never_tasks_nor_priorities(w, [first, done, later])
-    # A duration question on the way does not bring the priorities in either.
-    w = add_or_plan(TK_BILLS)
-    asked = w.add(task(NOTARY, duration_min=None), task(MEDICINE, duration_min=None))
-    assert asked.question is not None and asked.question.kind == "duration", asked
-    w.ai.durations = [30, 30]
-    after = w.answer(asked.question.id, "пів години")
+    # A «коли?» question on the way (two tasks, neither time nor duration) does not bring them in either.
+    w2 = with_when(TK_BILLS)
+    asked = w2.add(task(NOTARY, duration_min=None), task(MEDICINE, duration_min=None))
+    assert asked.question is not None and asked.question.kind == "when", asked
+    after = w2.answer_when(
+        asked.question.id, when(day="2026-11-10", start_local=TUE_10), "у вівторок о десятій"
+    )
+    assert after is not None
     replies = [asked, after]
-    if after.question is not None and after.question.kind == "duration":
-        replies.append(w.answer(after.question.id, "пів години"))
-    _never_tasks_nor_priorities(w, replies)
+    if after.question is not None and after.question.kind == "when":
+        last = w2.answer_when(
+            after.question.id, when(day="2026-11-11", start_local=WED_15), "у середу о третій"
+        )
+        assert last is not None
+        replies.append(last)
+    _never_tasks_nor_priorities(w2, replies)
     shown(replies[-1])
 
 
-def test_I2_add_asks_limits_only_while_none_are_saved_and_never_places_outside_them() -> None:
-    w = add_or_plan(TK_BILLS, ask_limits=True)
-    # A refused «додай» first: nothing saved, nothing asked about limits beyond the first question later.
-    w.add(text="додай")
-    first = w.add(task(NOTARY))
-    question = limits_question(first)
-    assert plain(first.text) == plain(ASK_LIMITS_FIRST), first.text
-    # Appended before the answer: still no plan outside unconfirmed limits.
-    pending = w.add(task(MEDICINE), text="і ще ліки", now=utc(9, 9, 8))
-    limits_question(pending)
-    w.ai.limits = dict(AFTERNOONS)
-    plan = w.answer_limits(question.id, "будні з другої до шостої", now=utc(9, 9, 9))
-    within_afternoons(plan)
-    plan_id, fingerprint = shown(plan)
-    w.confirm(plan_id, fingerprint, now=utc(9, 9, 10))
-    # Saved now: every later «додай» is planned inside them, with no question about limits.
-    later = w.add(task(SISTER), text="додай подзвонити сестрі", now=utc(9, 9, 20))
+def test_I2_add_never_asks_the_limits_whether_saved_or_not() -> None:
+    # No limits saved, `ask_limits` on: a refused «додай», then «додай», an append, «так», a later «додай».
+    w = with_when(TK_BILLS, ask_limits=True)
+    replies: list[Reply | None] = [w.add(text="додай")]
+    first = w.add(at(NOTARY, TUE_10))
+    replies.append(first)
+    pending = w.add(at(MEDICINE, TUE_12), text="і ще ліки", now=utc(9, 9, 8))
+    replies.append(pending)
+    plan_id, fingerprint = shown(pending)
+    replies.append(w.confirm(plan_id, fingerprint, now=utc(9, 9, 10)))
+    later = w.add(at(SISTER, WED_10), text="додай подзвонити сестрі", now=utc(9, 9, 20))
     assert later.question is not None and later.question.kind == "plan", later
     assert AGAIN_PREFIX not in later.text, later.text
-    within_afternoons(later)
-    appended = w.add(task(DOCTOR), text="і ще до лікаря", now=utc(9, 9, 21))
-    assert appended.question is not None and appended.question.kind == "plan", appended
-    within_afternoons(appended)
-    assert set(items(appended)) == {SISTER, DOCTOR}, appended
-    # Limits saved by an earlier planning, before any «додай»: never asked, always applied.
+    replies.append(later)
+    # A task with no time under `ask_limits`: «коли?», never the limits.
+    timeless = w.add(task(DOCTOR, duration_min=None), text="і ще до лікаря", now=utc(9, 9, 21))
+    assert timeless.question is not None and timeless.question.kind == "when", timeless
+    replies.append(timeless)
+    for reply in replies:
+        no_duration_nor_limits(reply)
+    # Limits saved by an earlier planning, before any «додай»: never asked again.
     # The three «додай» append to one unwritten draft (several-tasks S1), so their titles differ.
-    w = add_or_plan(TaskItem("tk-9", "щось"), ask_limits=True)
-    w.seed_limits(WEEKDAYS, "14:00", "18:00")
-    for n, spoken in enumerate(((task(NOTARY),), (task(MEDICINE), task(SISTER)), (task(DOCTOR),))):
-        reply = w.add(*spoken, now=utc(9, 9, 7) + timedelta(minutes=n))
+    w3 = add_or_plan(TaskItem("tk-9", "щось"), ask_limits=True)
+    w3.seed_limits(WEEKDAYS, "14:00", "18:00")
+    spoken_by_turn = (
+        (at(NOTARY, TUE_15),),
+        (at(MEDICINE, WED_15), at(SISTER, THU_15)),
+        (at(DOCTOR, THU_10),),
+    )
+    for n, spoken in enumerate(spoken_by_turn):
+        reply = w3.add(*spoken, now=utc(9, 9, 7) + timedelta(minutes=n))
+        no_duration_nor_limits(reply)
         assert reply.question is not None and reply.question.kind == "plan", reply
         assert AGAIN_PREFIX not in reply.text
-        within_afternoons(reply)

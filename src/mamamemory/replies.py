@@ -1,4 +1,4 @@
-"""Форми відповіді асистента (S3): `ReplyTo`, `Question`, `PlanView`, `Reply`.
+"""Форми відповіді асистента (S3): `ReplyTo`, `Question`, `PlanView`, `Card`, `Reply`.
 
 Не робить: жодної логіки — лише значення, які `planning` і `assistant` повертають, а `http` віддає як JSON.
 """
@@ -6,7 +6,7 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-QuestionKind = Literal["duration", "plan", "limits", "priorities", "case", "clarify"]
+QuestionKind = Literal["duration", "plan", "limits", "priorities", "case", "clarify", "when"]
 
 
 @dataclass(frozen=True)
@@ -34,9 +34,31 @@ class PlanView:
 
 
 @dataclass(frozen=True)
+class CardItem:
+    time: str | None
+    text: str
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class CardSection:
+    heading: str | None
+    items: list[CardItem]
+
+
+@dataclass(frozen=True)
+class Card:
+    """Відповідь розкладу чи задач карткою (agenda-card): заголовок, розділи, рядки з часом."""
+
+    title: str
+    sections: list[CardSection]
+
+
+@dataclass(frozen=True)
 class Reply:
     text: str
     question: Question | None = None
     plan: PlanView | None = None
     choices: list[str] | None = None
     """Фрази двох варіантів під питанням `clarify` — для двох кнопок (clarify)."""
+    card: Card | None = None

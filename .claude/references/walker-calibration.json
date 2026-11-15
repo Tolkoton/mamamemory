@@ -1,0 +1,49 @@
+{
+  "about": "The user-walker's calibration (board 318; R3 §4; ships into every project, board 1789). Each case is a deployed revision of mamamemory the walker walks three times (`walker.py request j-N --calibration <case> ...`); `walker.py calibrate` reads the last walk of each. A seeded defect is found when a finding of one of its kinds recurred in 2 of 3 runs. The walker is on only with need_seeded found and at most max_false counted findings (kind other than unclear_text) on the clean revision. `goal` is what the walker is told when the project has no sealed journey j-N (the person's goal, never the steps); `budget` is the step budget of such a walk.",
+  "need_seeded": 3,
+  "max_false": 1,
+  "budget": 12,
+  "seeded": {
+    "a1-no-reaction": {
+      "what": "R0 A.1: recording gives no visible reaction; «➤» without a recording does nothing",
+      "journey": "the core journey, first phrase",
+      "kinds": [
+        "no_feedback",
+        "dead_end"
+      ],
+      "goal": "Скажи застосунку голосом одну справу на сьогодні й переконайся, що він її почув."
+    },
+    "a2-task-starts-week": {
+      "what": "R0 A.2: «додай задачу» starts the week's planning",
+      "journey": "add one task",
+      "kinds": [
+        "unexpected_action"
+      ],
+      "goal": "Додай одну задачу: «купити ліки» на завтра."
+    },
+    "a45-stuck-question": {
+      "what": "R0 A.4/A.5: a pending question takes the next phrase («Скільки часу це займе?»)",
+      "journey": "today's plan after an open question",
+      "kinds": [
+        "stuck_question",
+        "unexpected_action"
+      ],
+      "goal": "Додай задачу «полити квіти», а тоді дізнайся, що в тебе сьогодні."
+    },
+    "a8-duplicate-control": {
+      "what": "R0 A.8: 📷 and ＋ do the same thing",
+      "journey": "add a photo",
+      "kinds": [
+        "duplicate_control"
+      ],
+      "goal": "Додай до запису фотографію."
+    }
+  },
+  "clean": {
+    "clean": {
+      "what": "a revision with none of the four defects",
+      "journey": "the core journey, first phrase (the goal of a1-no-reaction)",
+      "goal": "Скажи застосунку голосом одну справу на сьогодні й переконайся, що він її почув."
+    }
+  }
+}

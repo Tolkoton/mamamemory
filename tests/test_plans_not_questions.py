@@ -6,6 +6,10 @@ Written by the slice tester from the sealed contract `.engine/slices/plans-not-q
 
 Superseded in part by `.engine/slices/calm-open.md`: a task reaches «Задачі без часу:» only with `due` in
 the period, so the tasks shown below are due today (Monday 9 November, Berlin).
+
+Superseded in part by `.engine/slices/add-simply.md`: a draft of `mode: "add"` asks neither the duration nor
+the limits, so the limits question is reached through the week plan, and the «додай задачу» draft is kept
+under its «коли?» question.
 """
 
 import copy
@@ -16,11 +20,13 @@ import requests
 from mamamemory import planning
 from mamamemory.integrations.google_work import TaskItem
 from tests.add_or_plan_world import TK_BILLS, TK_PARCEL
+from tests.add_simply_world import AddSimply, WhenAI, when
 from tests.google_tasks_world import BILLS, PARCEL
 from tests.plans_not_questions_world import (
     DOCTOR_LINE,
     NOTHING_TODAY,
     TASKS_HEADER,
+    AgendaTasksCalendar,
     TasksAgenda,
     WriteLogStore,
     doctor_today,
@@ -32,7 +38,7 @@ from tests.plans_not_questions_world import (
 from tests.several_tasks_world import MEDICINE, NOTARY, task
 from tests.stuck_question_world import asked, cannot
 from tests.test_one_task_planning import NOW, make_session
-from tests.time_limits_world import parsed
+from tests.time_limits_world import RecordingStore, parsed
 
 PLANS = "які в нас плани?"
 MINUTE = timedelta(minutes=1)
@@ -90,8 +96,9 @@ def test_seam1_is_answer_missing_answers_as_before() -> None:
 
 
 def test_seam1_limits_is_answer_true_saves_the_limits_as_before() -> None:
-    w = plans(ask_limits=True, use_tasks=False)
-    question = asked(w.add(task(NOTARY)), "limits")
+    # Superseded by add-simply: a draft of `mode: "add"` never asks the limits; the week plan asks them.
+    w = plans(ask_limits=True, ask_priorities=False, use_tasks=False)
+    question = asked(w.plan_week(task(NOTARY), task(MEDICINE)), "limits")
     w.ai.limits = dict(parsed(days=WEEKDAYS, start_local="14:00", end_local="18:00"), is_answer=True)
     reply = w.try_limits(question.id, "будні з другої до шостої")
     assert reply is not None
@@ -148,11 +155,20 @@ def test_seam2_plans_under_the_duration_question_keeps_the_draft() -> None:
     assert w.draft() == before
 
 
-def test_seam2_plans_under_limits_of_add_a_task_keeps_the_draft() -> None:
-    w = plans(ask_limits=True, use_tasks=False, agenda=(doctor_today(),))
-    question = asked(w.add(task(NOTARY)), "limits")
+def test_seam2_plans_under_the_when_question_of_add_a_task_keeps_the_draft() -> None:
+    # Superseded by add-simply: «додай задачу» asks no limits any more, only «коли?» for a task with no time;
+    # «які плани» under it (not an answer, routed `schedule`) leaves the «додай задачу» draft as it is.
+    w = AddSimply(
+        WhenAI(),
+        AgendaTasksCalendar(agenda=(doctor_today(),)),
+        RecordingStore(),
+        True,
+        True,
+        False,
+    )
+    question = asked(w.add(task(NOTARY, duration_min=None)), "when")
     before = copy.deepcopy(w.draft())
-    w.ai.limits = dict(parsed(), is_answer=False)
+    w.ai.when = when(is_answer=False)
     w.say(PLANS, question, intent="schedule")
     assert w.draft() == before
 

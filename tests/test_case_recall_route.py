@@ -1,5 +1,5 @@
 """Contract tests of the intent `recall` of `assistant`, the model type `answer_case` and the guide's two new
-lines (slice case-recall, Seam 3).
+lines (slice case-recall, Seam 3); the guide test superseded by tasks-list (the tasks line before 🔊).
 
 Written by the slice tester from the sealed contract `.engine/slices/case-recall.md`, without the code.
 The contract does not fix the apostrophe's typography nor whitespace around the guide (as in the guide slice):
@@ -27,6 +27,7 @@ GUIDE = (
     "• «Переклади … до …» — перенесу в іншу справу.\n"
     "• «Працюю над …», потім «що я робила з …?» — запам'ятаю й нагадаю.\n"
     "• «Що ми знаємо про пані Шмідт?», «які плани на тиждень?» — розповім.\n"
+    "• «Які в мене задачі?» — покажу список задач.\n"
     "• 🔊 біля відповіді — прочитаю вголос.\n"
     "Не зрозумію — перепитаю."
 )
@@ -102,7 +103,11 @@ def test_answer_case_is_a_flash_lite_model_type() -> None:
     assert "flash-lite" in DEFAULT_MODELS[ANSWER_CASE].model
 
 
-def test_seam3_guide_is_nine_lines_with_the_two_new_before_the_read_aloud_line() -> None:
+def test_seam3_guide_is_ten_lines_with_the_two_new_and_the_tasks_line_before_the_read_aloud_line() -> None:
+    # tasks-list: the tasks line stands right before the 🔊 line; the guide is now 10 lines.
     assert guide_form(assistant.GUIDE_UK) == GUIDE
     assert guide_form(assistant.guide_text("uk")) == GUIDE
-    assert len(guide_form(assistant.GUIDE_UK).split("\n")) == 9
+    lines = guide_form(assistant.GUIDE_UK).split("\n")
+    assert len(lines) == 10
+    assert lines[7] == "• «Які в мене задачі?» — покажу список задач."
+    assert lines[8].startswith("• 🔊")

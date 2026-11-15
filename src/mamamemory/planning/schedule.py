@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from mamamemory.access import Session
 from mamamemory.config import Config
 from mamamemory.integrations.google_work import AgendaItem, GoogleWork, TaskItem
-from mamamemory.replies import Reply
+from mamamemory.replies import Card, CardItem, CardSection, Reply
 
 HEADERS = {
     "today": "На сьогодні",
@@ -19,6 +19,11 @@ HEADERS = {
     "next_week": "На наступний тиждень",
 }
 TASKS_HEADER = "Задачі без часу:"
+LIST_HEADER = "Задачі в списку:"
+NO_OPEN_TASKS = "Відкритих задач немає."
+TASKS_OFF = "Список задач вимкнено."
+NOTHING_ROW = "В календарі нічого немає."
+TASKS_FAILED = "Не вдалося прочитати задачі, спробуйте ще раз."
 WEEKDAYS = ("Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя")
 MONTHS = (
     "січня", "лютого", "березня", "квітня", "травня", "червня",
@@ -50,7 +55,67 @@ def show(session: Session, text: str, *, calendar: GoogleWork, now: datetime, co
         else [f"{HEADERS[kind]} в календарі нічого немає."]
     )
     listed = [TASKS_HEADER, *(f"• {task.title}" for task in tasks)] if tasks else []
-    return Reply("\n".join([*events, *listed]))
+    return Reply("\n".join([*events, *listed]), card=_schedule_card(kind, items, tasks, start.date(), tz))
+
+
+def _schedule_card(
+    kind: str, items: list[AgendaItem], tasks: list[TaskItem], first: date, tz: ZoneInfo
+) -> Card | None:
+    """Та сама відповідь карткою (agenda-card): розділи днів (тиждень) чи один розділ, далі задачі з датою."""
+    if not items and not tasks:
+        return None
+    nothing = [CardSection(None, [CardItem(None, NOTHING_ROW)])]
+    sections = _day_sections(kind, items, first, tz) if items else nothing
+    if tasks:
+        sections.append(CardSection(TASKS_HEADER.rstrip(":"), [CardItem(None, task.title) for task in tasks]))
+    return Card(HEADERS[kind], sections)
+
+
+def _day_sections(kind: str, items: list[AgendaItem], first: date, tz: ZoneInfo) -> list[CardSection]:
+    """Події по днях, як `_lines`: для тижня — розділ на день із заголовком дня; інакше — один без
+    заголовка."""
+    sections: list[CardSection] = []
+    shown: date | None = None
+    for item in items:
+        day = max(item.day, first)
+        if not sections or (kind in ("week", "next_week") and day != shown):
+            heading = f"{WEEKDAYS[day.weekday()]}, {day.day} {MONTHS[day.month - 1]}"
+            sections.append(CardSection(heading if kind in ("week", "next_week") else None, []))
+        shown = day
+        sections[-1].items.append(_card_item(item, tz))
+    return sections
+
+
+def _card_item(item: AgendaItem, tz: ZoneInfo) -> CardItem:
+    if item.all_day or item.start is None:
+        return CardItem("весь день", item.title)
+    return CardItem(f"{item.start.astimezone(tz):%H:%M}", item.title)
+
+
+def tasks(*, calendar: GoogleWork, config: Config) -> Reply:
+    """«Які в мене задачі?» (tasks-list): усі відкриті задачі Google Tasks у порядку списку, з датою,
+    де вона є. Будь-яка помилка читання — текст збою. Нічого не пише."""
+    if not config.use_tasks:
+        return Reply(TASKS_OFF)
+    try:
+        found = calendar.list_open_tasks()
+    except Exception:
+        return Reply(TASKS_FAILED)
+    if not found:
+        return Reply(NO_OPEN_TASKS)
+    card = Card(LIST_HEADER.rstrip(":"), [CardSection(None, [_task_item(task) for task in found])])
+    return Reply("\n".join([LIST_HEADER, *(_task_line(task) for task in found)]), card=card)
+
+
+def _task_item(task: TaskItem) -> CardItem:
+    due = f"до {task.due.day} {MONTHS[task.due.month - 1]}" if task.due is not None else None
+    return CardItem(None, task.title, due)
+
+
+def _task_line(task: TaskItem) -> str:
+    if task.due is None:
+        return f"• {task.title}"
+    return f"• {task.title} — до {task.due.day} {MONTHS[task.due.month - 1]}"
 
 
 def _due_in(tasks: list[TaskItem], first: date, end: date) -> list[TaskItem]:

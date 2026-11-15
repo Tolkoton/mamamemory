@@ -6,7 +6,10 @@ import { speak } from "/speak.js";
 import { makePlay } from "/player.js";
 import { initialButton, onButton } from "/speak_button.js";
 import { restore } from "/open_questions.js";
-import { loadGuide } from "/help.js";
+import { loadGuide, nextGuide } from "/help.js";
+import { bindButtons } from "/buttons.js";
+import { mineText } from "/dialog.js";
+import { buildCard } from "/card.js";
 import { createRecorder } from "/recorder.js";
 import { initial, on, statusOf } from "/voice_state.js";
 
@@ -14,7 +17,7 @@ const conversation = document.getElementById("conversation");
 let lastReplyTo = null;
 let voice = initial(null);
 
-const NOT_SENT = { text: "Не вдалося, спробуйте ще раз.", question: null, plan: null };
+const NOT_SENT = { text: "Не вдалося, спробуйте ще раз.", question: null, plan: null, failed: true };
 
 async function answerOf(response) {
   if (!response.ok) return NOT_SENT;
@@ -22,12 +25,16 @@ async function answerOf(response) {
 }
 
 async function post(url, body) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return answerOf(response);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return await answerOf(response);
+  } catch {
+    return NOT_SENT;
+  }
 }
 
 /** Повідомлення з новим `message_id` (повтор після обриву мережі — з тим самим). */
@@ -39,6 +46,15 @@ async function message(text, replyTo) {
   }
 }
 
+/** Мамине повідомлення в розмові (dialog): абзац праворуч, без 🔊; очікуване питання й голос не змінює. */
+function renderMine(text) {
+  if (!text) return;
+  const item = document.createElement("p");
+  item.className = "mine";
+  item.textContent = text;
+  conversation.append(item);
+}
+
 /** Лише абзац і 🔊 — без змін очікуваного питання (гайд кнопкою, calm-open). */
 function renderText(text) {
   const item = document.createElement("p");
@@ -47,23 +63,47 @@ function renderText(text) {
   if (text) conversation.append(speakButton(text));
 }
 
+/** Елемент для `buildCard`: тег, клас, текст лише через `textContent`. */
+function make(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text !== null && text !== undefined) element.textContent = text;
+  return element;
+}
+
 function show(reply) {
-  renderText(reply.text);
+  if (reply.card) {
+    conversation.append(buildCard(reply.card, make));
+    conversation.append(speakButton(reply.text));
+  } else {
+    renderText(reply.text);
+  }
+  const targets = [];
   const button = yesButton(reply);
-  if (button) {
-    const yes = document.createElement("button");
-    yes.textContent = "так";
-    yes.addEventListener("click", async () => show(await post(button.url, button.body)));
-    conversation.append(yes);
-  }
-  for (const choice of clarifyButtons(reply)) {
-    const pick = document.createElement("button");
-    pick.textContent = choice.label;
-    pick.addEventListener("click", async () => show(await post(choice.url, choice.body)));
-    conversation.append(pick);
-  }
+  if (button) targets.push({ label: "так", url: button.url, body: button.body });
+  for (const choice of clarifyButtons(reply)) targets.push(choice);
+  const elements = targets.map((target) => {
+    const element = document.createElement("button");
+    element.textContent = target.label;
+    conversation.append(element);
+    return element;
+  });
+  // Одна сторожа на всі кнопки повідомлення (one-message): один натиск — одна відповідь.
+  const press = bindButtons(elements, post);
+  elements.forEach((element, n) => {
+    element.addEventListener("click", () => pressed(press, targets[n]));
+  });
   lastReplyTo = nextReplyTo(reply);
   voice = on(voice, { type: "assistant_reply", reply }).state;
+}
+
+/** Відповідь на натиск: збій — лише текст (кнопки знову ввімкнені, очікуване питання те саме); інакше — `show`. */
+async function pressed(press, target) {
+  const answer = await press(target.url, target.body);
+  if (answer === null) return;
+  renderMine(mineText("button", target.label));
+  if (answer.failed) renderText(answer.text);
+  else show(answer);
 }
 
 const play = makePlay(Audio, URL);
@@ -100,6 +140,7 @@ function speakButton(text) {
 /** Надсилає текст мами з `reply_to` останньої відповіді на екрані. */
 export async function send(text) {
   const reply_to = lastReplyTo;
+  renderMine(mineText("said", text));
   show(await message(text, reply_to));
 }
 
@@ -159,6 +200,7 @@ function dispatch(event) {
     if (action.do === "show_error") draft.textContent = action.error;
     if (action.do === "send_message") {
       draft.textContent = "";
+      renderMine(mineText("said", action.text));
       message(action.text, action.reply_to).then(show);
     }
   }
@@ -190,6 +232,7 @@ async function upload(input) {
   input.value = "";
   if (!file) return;
   status.textContent = "Надсилаю…";
+  renderMine(mineText("file", file.name));
   try {
     show(await uploadFile(fetch, () => crypto.randomUUID().replaceAll("-", ""), file));
   } catch {
@@ -213,8 +256,17 @@ window.mamamemory = { send };
 
 // ------------------------------------------------------------------ «Що я вмію» (calm-open)
 
+// Один блок `#guide`: перший клік відкриває, другий згортає (add-simply). Розмови й `reply_to` не чіпає.
+const guideBlock = document.getElementById("guide");
 document.getElementById("help").addEventListener("click", async () => {
+  if (nextGuide(!guideBlock.hidden) === "close") {
+    guideBlock.hidden = true;
+    return;
+  }
   const guide = await loadGuide(fetch);
   if (guide === "login") window.location.href = "/auth/login";
-  else if (guide) renderText(guide.text);
+  else if (guide) {
+    guideBlock.textContent = guide.text;
+    guideBlock.hidden = false;
+  }
 });

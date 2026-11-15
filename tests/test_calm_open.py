@@ -130,9 +130,10 @@ def stuck_world(*, ask_limits: bool = False, ask_priorities: bool = True) -> Stu
 
 
 def test_seam1_fresh_asking_draft_with_a_case_question_gives_only_the_case_question() -> None:
+    # add-simply: a timed task of an `add` draft with no time named is asked «коли?» (not its duration).
     w = stuck_world(ask_priorities=False)
     reply = w.add(task(NOTARY, duration_min=None))
-    assert reply.question is not None and reply.question.kind == "duration", reply
+    assert reply.question is not None and reply.question.kind == "when", reply
     mark_guide_seen(w.store)
     with_case_question(w.store)
     before = copy.deepcopy(plan_draft(w.store))

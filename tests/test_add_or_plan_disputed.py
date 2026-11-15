@@ -11,12 +11,15 @@ from tests.google_tasks_world import BILLS
 from tests.several_tasks_world import MEDICINE, NOTARY, SISTER, task
 from tests.test_one_task_planning import shown
 
+TUE_10 = "2026-11-10T10:00"
+TUE_12 = "2026-11-10T12:00"
+
 
 def test_Q1_next_question_itself_never_asks_the_priorities_in_add_mode() -> None:
     """Q1: «`next_question` (через `_asked`): у режимі `add` питання про важливість не ставиться ніколи» —
     `next_question` itself, called with `ask_priorities=True`, honours the draft's `mode`."""
     w = add_or_plan(TK_BILLS)
-    shown(w.add(task(NOTARY), task(MEDICINE)))
+    shown(w.add(task(NOTARY, start_local=TUE_10), task(MEDICINE, start_local=TUE_12)))
     draft = w.draft()
     assert draft is not None and draft.get("mode") == "add", draft
     asked = planning.next_question(draft, ask_priorities=True)

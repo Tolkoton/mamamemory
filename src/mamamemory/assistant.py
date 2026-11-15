@@ -36,6 +36,7 @@ GUIDE_UK = (
     "• «Переклади … до …» — перенесу в іншу справу.\n"
     "• «Працюю над …», потім «що я робила з …?» — запам'ятаю й нагадаю.\n"
     "• «Що ми знаємо про пані Шмідт?», «які плани на тиждень?» — розповім.\n"
+    "• «Які в мене задачі?» — покажу список задач.\n"
     "• 🔊 біля відповіді — прочитаю вголос.\n"
     "Не зрозумію — перепитаю."
 )
@@ -48,7 +49,7 @@ ROUTE_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": [
                 "yes", "no", "not_needed", "case_name", "new_task", "edit", "note", "move", "plan_week",
-                "unsure", "help", "working_on", "schedule", "work_question", "recall", "other",
+                "unsure", "help", "working_on", "schedule", "tasks", "work_question", "recall", "other",
             ],
         },
         "options": {
@@ -159,6 +160,8 @@ def _dispatch(
         )  # fmt: skip
     if intent == "schedule":
         return planning.schedule.show(session, text, calendar=calendar, now=now, config=config)
+    if intent == "tasks":
+        return planning.schedule.tasks(calendar=calendar, config=config)
     if intent == "recall":
         return case_recall.recall(session, text, store=store, ai=ai, calendar=calendar, now=now)
     if intent == "work_question":
@@ -174,7 +177,9 @@ def _dispatch(
 
 
 CASE_ANSWERS = ("yes", "no", "not_needed", "case_name")
-ALWAYS = ("new_task", "plan_week", "note", "move", "working_on", "schedule", "work_question", "recall")
+ALWAYS = (
+    "new_task", "plan_week", "note", "move", "working_on", "schedule", "tasks", "work_question", "recall",
+)  # fmt: skip
 CLARIFY_PATH = "clarify/current"
 PHRASES = {
     "new_task": "поставити задачею в календар",
@@ -188,6 +193,7 @@ PHRASES = {
     "not_needed": "лишити без справи",
     "working_on": "записати, над чим працюєте",
     "schedule": "показати, що вже заплановано",
+    "tasks": "показати список задач",
     "work_question": "згадати, що ви робили",
     "recall": "розповісти, що відомо про справу",
 }
@@ -309,6 +315,7 @@ def _run_clarified(
 
 SHORT_ANSWERS: dict[str, Callable[..., Reply | None]] = {
     "duration": planning.try_answer_duration,
+    "when": planning.try_answer_when,
     "priorities": planning.try_answer_priorities,
     "limits": planning.try_answer_limits,
 }
@@ -385,6 +392,9 @@ def _route_prompt(
         "new_task, якщо мама не просить спланувати тиждень; "
         "schedule — мама питає, що в неї вже заплановано («які плани на сьогодні?», «що в мене на тиждень?», "
         "«що в мене завтра?»); "
+        "tasks — мама питає про свої задачі чи список справ без періоду («які в мене задачі?», "
+        "«що в списку справ?», «покажи задачі»); з періодом («на сьогодні», «на тиждень») — schedule; "
+        "нова задача — new_task; «список справ» тут — задачі, не recall (не про справу-людину); "
         "plan_week — лише коли просить спланувати («сплануй тиждень», «давай планувати»), навіть з "
         "задачами в тій самій фразі; "
         "edit — мама просить змінити показаний план, тобто задачу, яка вже в ньому є (названу хоч одним "
@@ -407,7 +417,8 @@ def _route_prompt(
         "unsure з note і new_task; "
         "«ну не знаю», «не знаю», «хм» — other, не unsure (unsure — лише між двома конкретними намірами); "
         "move — мама просить перекласти вже внесений матеріал (нотатку, фото, документ) в іншу справу "
-        "(«переклади …», «це не до X, а до Y»); «перенеси <задачу з плану> на …» під планом — edit; "
+        "(«переклади …», «це не до X, а до Y»); «нотатку про X перенеси в Y» — теж move: це матеріал, не "
+        "задача плану; «перенеси <задачу з плану> на …» під планом — edit; "
         "other — щось інше."
     )
 

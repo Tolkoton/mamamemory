@@ -10,6 +10,15 @@
     body { font-family: system-ui, sans-serif; font-size: 22px; margin: 0; padding: 16px; background: #fbfaf7; color: #1d1d1d; }
     h1 { font-size: 26px; margin: 0 0 12px; color: #2f6b4f; }
     #conversation p { background: #eef4f0; border-radius: 12px; padding: 12px; margin: 8px 0; white-space: pre-line; }
+    #conversation p.mine { background: #2f6b4f; color: #fff; margin-left: auto; max-width: 85%; width: fit-content; }
+    .card { background: #fff; border: 2px solid #2f6b4f; border-radius: 12px; padding: 12px 16px; margin: 8px 0; }
+    .card h3 { margin: 0 0 8px; font-size: 24px; color: #2f6b4f; }
+    .card h4 { margin: 12px 0 4px; font-size: 22px; }
+    .card ul { list-style: none; margin: 0; padding: 0; }
+    .card li { display: flex; gap: 12px; padding: 4px 0; border-bottom: 1px solid #eef4f0; }
+    .card-time { font-weight: bold; min-width: 5.5em; }
+    .card-note { color: #777; margin-left: auto; }
+    #guide { background: #fff; border: 2px solid #2f6b4f; border-radius: 12px; padding: 12px; margin: 0 0 8px; white-space: pre-line; }
     #help { font-size: 20px; padding: 8px 20px; border-radius: 12px; border: 2px solid #2f6b4f; background: #fff; color: #2f6b4f; margin-bottom: 8px; }
     #conversation button { font-size: 22px; padding: 10px 28px; border-radius: 12px; border: 0; background: #2f6b4f; color: #fff; }
     #draft { font-size: 24px; min-height: 1.5em; }
@@ -25,6 +34,7 @@
   <main id="mamamemory-shell">
     <h1>Мамина пам'ять</h1>
     <button id="help">Що я вмію</button>
+    <p id="guide" hidden></p>
     <section id="conversation" aria-live="polite"></section>
     <p id="draft" aria-live="polite"></p>
     <p id="status" aria-live="polite"></p>

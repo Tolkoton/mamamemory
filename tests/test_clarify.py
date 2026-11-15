@@ -14,13 +14,17 @@ from tests.case_questions_world import case_q
 from tests.clarify_world import (
     NOT_ACTUAL,
     Clarify,
+    ClarifyStuckAI,
+    StuckClarify,
     asked_text,
     clarified,
     stuck_clarify,
 )
+from tests.google_tasks_world import TasksCalendar
 from tests.note_to_case_world import ask, placed
 from tests.several_tasks_world import NOTARY, task
 from tests.stuck_question_world import TEA, asked
+from tests.time_limits_world import RecordingStore
 
 KOCH = "пан Кох"
 SCHMIDT = "пані Шмідт"
@@ -297,19 +301,32 @@ def test_seam2_word_under_a_stale_clarification_is_routed_as_new_and_leaves_the_
     assert w.current() == kept
 
 
+class NoWhenAnswerAI(ClarifyStuckAI):
+    """`ClarifyStuckAI` whose when parse (add-simply `parse_when`) answers `is_answer: false`."""
+
+    def generate_json(self, task_type: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if "when" in task_type:
+            self.calls.append(task_type)
+            self.prompts.setdefault(task_type, []).append(prompt)
+            return {"is_answer": False, "day": None, "start_local": None}
+        return super().generate_json(task_type, prompt, schema)
+
+
 def test_seam2_choice_replays_the_effective_reply_to_and_replace_asking() -> None:
-    w = stuck_clarify()
-    duration_q = asked(w.add(task(NOTARY, duration_min=None)), "duration")
-    w.ai.raw_durations = [None]
+    # Superseded by add-simply: «додай задачу» with no time asks «коли?», not the duration; a phrase that
+    # is no answer to «коли?» (`is_answer: false`) is routed as without `reply_to` (stuck-question).
+    w = StuckClarify(NoWhenAnswerAI(), TasksCalendar(honour_409=True), RecordingStore(), False, True, False)
+    when_q = asked(w.add(task(NOTARY, duration_min=None)), "when")
     w.ai.unsure("new_task", "note")
-    question = clarified(w.message("а мені треба чай", duration_q))
+    question = clarified(w.message("а мені треба чай", when_q))
     current = w.current()
     assert current is not None and current["reply_to"] is None, current
     w.ai.says(task(TEA))
     reply = w.button(question.id, 1)
     assert w.titles() == [TEA]
     assert NOTARY not in reply.text, reply
-    assert reply.question is None or reply.question.kind != "duration", reply
+    assert reply.text == "Коли «чай»? Скажіть день і годину.", reply
+    assert reply.question is not None and reply.question.kind == "when", reply
     assert w.tc.insert_calls == []
     parses = [p for k, ps in w.ai.prompts.items() if k.startswith("parse_task") for p in ps]
     assert parses and "а мені треба чай" in parses[-1], parses
@@ -387,7 +404,9 @@ def test_I2_the_chosen_variant_runs_once_with_the_text_mama_said() -> None:
     s.ai.says(task(NOTARY))
     s.ai.option = 1
     first = s.message("задачею", Question("clarify", clarified_q.id, None))
-    assert first.plan is not None, first
+    # add-simply: a task with no time named gets «коли?», never the duration question.
+    assert first.text == "Коли «подзвонити нотаріусу»? Скажіть день і годину.", first
+    assert first.question is not None and first.question.kind == "when", first
     parses = [p for k, ps in s.ai.prompts.items() if k.startswith("parse_task") for p in ps]
     assert len(parses) == 1 and said in parses[0], parses
     assert s.button(clarified_q.id, 1).text == NOT_ACTUAL

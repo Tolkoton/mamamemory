@@ -116,6 +116,9 @@ def _add_routes(app: FastAPI) -> None:
     app.add_api_route("/player.js", _script("player.js"), methods=["GET"])
     app.add_api_route("/speak_button.js", _script("speak_button.js"), methods=["GET"])
     app.add_api_route("/help.js", _script("help.js"), methods=["GET"])
+    app.add_api_route("/buttons.js", _script("buttons.js"), methods=["GET"])
+    app.add_api_route("/dialog.js", _script("dialog.js"), methods=["GET"])
+    app.add_api_route("/card.js", _script("card.js"), methods=["GET"])
     app.add_api_route("/api/open", _open, methods=["GET"])
     app.add_api_route("/api/guide", _guide, methods=["GET"])
     app.add_api_route("/api/message", _message, methods=["POST"])
@@ -430,6 +433,8 @@ def _reply_json(reply: Reply) -> dict[str, Any]:
     data = dataclasses.asdict(reply)
     if data.get("choices") is None:
         data.pop("choices", None)
+    if data.get("card") is None:
+        data.pop("card", None)
     return data
 
 

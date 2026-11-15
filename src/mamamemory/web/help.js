@@ -13,3 +13,8 @@ export async function loadGuide(fetchFn) {
     return null;
   }
 }
+
+/** Кнопка «Що я вмію» перемикає один блок гайду (add-simply): прихований — відкрити, показаний — сховати. */
+export function nextGuide(shown) {
+  return shown ? "close" : "open";
+}

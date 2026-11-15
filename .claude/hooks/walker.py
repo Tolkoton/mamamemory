@@ -9,7 +9,7 @@
     python3 .claude/hooks/walker.py say-server            # the walker's voice: an MCP server with one tool, say(text)
     python3 .claude/hooks/walker.py dispose <group> <n> --test <file> | --reject <why> | --owner <tasks/blocked/…>
     python3 .claude/hooks/walker.py gate j-N              # has the journey's last walk taken place, every finding decided: 0 yes, 3 no
-    python3 .claude/hooks/walker.py calibrate             # the calibration eval over the walks of evals/walker/cases.json
+    python3 .claude/hooks/walker.py calibrate             # the calibration eval over the walks of .claude/references/walker-calibration.json
     python3 .claude/hooks/walker.py status
 
 WHY (docs/research/2026-11-userflow/R3-user-walker.md). In mamamemory nobody walked the product before the
@@ -67,7 +67,7 @@ VERDICTS_REL = STATE_REL / "verdicts.jsonl"
 WALKS_REL = Path(".engine/walks")
 PERSONAS_REL = Path(".engine/personas")
 CALIBRATION_REL = WALKS_REL / "calibration.json"
-CASES_REL = Path("evals/walker/cases.json")
+CASES_REL = Path(".claude/references/walker-calibration.json")
 JOURNEYS_REL = Path(".engine/journeys")
 MCP_PIN = "@playwright/mcp@0.0.85"
 DEVICE = "Pixel 7"
@@ -138,7 +138,14 @@ def request(root: Path, unit: str, persona: str, url: str, runs: int = RUNS, bud
     if not persona_file.is_file() or not APPROVED.search(persona_file.read_text(encoding="utf-8")):
         return EXIT_REFUSED, (f"REFUSED: {PERSONAS_REL}/{persona}.md has no line «Затверджено власником: <date>, <place>: «<the owner's words>»» "
                               "— the persona is the owner's (.claude/templates/persona.md)")
-    found = journey_goal(root, unit)
+    found, case_budget = journey_goal(root, unit), 0
+    if calibration:
+        cases = ov.read_json(root / CASES_REL)
+        spec = {**cases.get("seeded", {}), **cases.get("clean", {})}.get(calibration)
+        if not isinstance(spec, dict):
+            return EXIT_REFUSED, f"REFUSED: «{calibration}» is no calibration case of {CASES_REL}"
+        if isinstance(found, str) and spec.get("goal"):   # a project with no sealed journey is calibrated on the case's goal
+            found, case_budget = (str(spec["goal"]), 0), int(cases.get("budget", 0))
     if isinstance(found, str):
         return EXIT_REFUSED, f"REFUSED: {found}"
     parts = urlsplit(url)
@@ -149,7 +156,7 @@ def request(root: Path, unit: str, persona: str, url: str, runs: int = RUNS, bud
         return EXIT_REFUSED, f"REFUSED: no login file {storage_state} (the owner's or the operator's: a session of the product's test account)"
     the_goal, steps = goal or found[0], found[1]
     group = ov.utc_now().replace("-", "").replace(":", "") + "-" + unit.lower() + "-" + secrets.token_hex(2)
-    budget = budget or max(6, 2 * steps)
+    budget = budget or case_budget or max(6, 2 * steps)
     origin = f"{parts.scheme}://{parts.netloc}"
     for k in range(1, runs + 1):
         here = run_dir(root, f"{group}-{k}")
@@ -428,7 +435,7 @@ def render(root: Path, group: JsonObj) -> None:
 
 
 def calibrate(root: Path) -> tuple[int, str]:
-    """The calibration eval: the last walk of each case of evals/walker/cases.json against its thresholds."""
+    """The calibration eval: the last walk of each case of the calibration cases (CASES_REL) against its thresholds."""
     cases = ov.read_json(root / CASES_REL)
     seeded, clean = cases.get("seeded", {}), cases.get("clean", {})
     out: JsonObj = {"pin": MCP_PIN, "utc": ov.utc_now(), "cases": {}}

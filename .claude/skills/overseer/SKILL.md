@@ -34,7 +34,12 @@ not say:
 - A claim the hook does not take is answered, never ignored (board 411): `UNIT CLAIM NOT
   TAKEN` names why — no working code to audit (a change only outside the code paths of
   `.claude/project.env`, or code a PASS already saw), a BLOCK on the very same code, or no
-  verification command. There is then no audit to wait for: do what it says and go on.
+  verification command, or this same claim on the same tree already requested. The same
+  words on new code are a new claim (board 319). There is then no audit to wait for: do
+  what it says and go on.
+- The hook reads only the turn's last message. A sentinel written earlier, the turn then going
+  on, gets `UNIT N CLAIM NOT SEEN` once (board 1791): end the turn with a line on what the unit did
+  and the sentinel on its own last line.
 - The commit never waits for the audit. A verified result is committed (unattended, through
   `.claude/unattended/commit_checkpoint.sh`) whether or not an audit follows; what counts
   at the close is `mode.py check-close`, and the hook asks for an audit on a claim whenever

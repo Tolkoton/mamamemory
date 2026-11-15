@@ -223,13 +223,22 @@ def _result_text(content: object) -> str:
     return ""
 
 
-def turn_events(transcript_path: str) -> list[JsonObj]:
-    """The tool calls of the current turn, in the order they ran: {"tool", "input", "result",
-    "is_error"}. The current turn is everything after the last genuine user message."""
+def _turn_records(transcript_path: str) -> list[JsonObj]:
+    """The user and assistant records of the current turn: everything after the last genuine user
+    message (a Stop hook's feedback is one too — it reaches the transcript as a string)."""
+    return _split_turns(transcript_path)[1]
+
+
+def turn_number(transcript_path: str) -> int:
+    """How many turns began before the current one: tells two turns of one conversation apart."""
+    return _split_turns(transcript_path)[0]
+
+
+def _split_turns(transcript_path: str) -> tuple[int, list[JsonObj]]:
     try:
         lines = Path(transcript_path).read_text(encoding="utf-8").splitlines() if transcript_path else []
     except OSError:
-        return []
+        return 0, []
     records: list[JsonObj] = []
     for line in lines:
         try:
@@ -238,10 +247,35 @@ def turn_events(transcript_path: str) -> list[JsonObj]:
             continue
         if isinstance(record, dict) and record.get("type") in ("user", "assistant"):
             records.append(record)
-    start = max((i for i, r in enumerate(records) if r.get("type") == "user" and _is_turn_boundary(r)), default=-1)
+    starts = [i for i, r in enumerate(records) if r.get("type") == "user" and _is_turn_boundary(r)]
+    return len(starts), records[(starts[-1] if starts else -1) + 1:]
+
+
+def turn_texts_since_last_audit(transcript_path: str) -> list[str]:
+    """The text blocks the assistant wrote in the current turn after the last launch of the overseer
+    agent, in order. The Stop envelope carries only the last of them (board 1791)."""
+    texts: list[str] = []
+    for record in _turn_records(transcript_path):
+        if record.get("type") != "assistant":
+            continue
+        content = (record.get("message") or {}).get("content") if isinstance(record.get("message"), dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text":
+                texts.append(str(block.get("text", "")))
+            elif block.get("type") == "tool_use" and isinstance(block.get("input"), dict) and launches_overseer(
+                    {"tool": str(block.get("name", "")), "input": block["input"]}):
+                texts.clear()
+    return texts
+
+
+def turn_events(transcript_path: str) -> list[JsonObj]:
+    """The tool calls of the current turn, in the order they ran: {"tool", "input", "result",
+    "is_error"}. The current turn is everything after the last genuine user message."""
     events: list[JsonObj] = []
     by_id: dict[str, JsonObj] = {}
-    for record in records[start + 1:]:
+    for record in _turn_records(transcript_path):
         content = (record.get("message") or {}).get("content") if isinstance(record.get("message"), dict) else None
         for block in content if isinstance(content, list) else []:
             if not isinstance(block, dict):
@@ -439,7 +473,8 @@ def make_request(root: Path, turn: str, *, origin: str, unit: str = "1", transcr
                  gate_allows_text: str = "", gate_escalation: str = "") -> JsonObj:
     """Write the request package and make it the pending one. Returns request.json's content."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    request_id = f"{stamp}-{hashlib.sha256((stamp + turn).encode('utf-8')).hexdigest()[:6]}"
+    # The clock in the hash: the same message may claim twice in one second on new code (board 319).
+    request_id = f"{stamp}-{hashlib.sha256((stamp + str(time.time_ns()) + turn).encode('utf-8')).hexdigest()[:6]}"
     slice_name = active_slice(root)
     unit_key = f"{slice_name or '-'}|{board_task(root)}|unit {unit}"
     events = turn_events(transcript_path)

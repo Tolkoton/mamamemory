@@ -44,6 +44,7 @@ def test_Q1_route_schema_options_lists_only_the_intents_allowed_for_the_reply_to
             "working_on",
             "work_question",
             "recall",
+            "tasks",
         },
         "plan": {
             "yes",
@@ -56,6 +57,7 @@ def test_Q1_route_schema_options_lists_only_the_intents_allowed_for_the_reply_to
             "working_on",
             "work_question",
             "recall",
+            "tasks",
         },
         "case": {
             "no",
@@ -69,6 +71,7 @@ def test_Q1_route_schema_options_lists_only_the_intents_allowed_for_the_reply_to
             "working_on",
             "work_question",
             "recall",
+            "tasks",
         },
     }
     reply_tos = {None: None, "plan": Question("plan", "p1", "fp"), "case": case_q("a1")}

@@ -36,9 +36,20 @@ A sentinel the hook does not take now gets one block naming why — no working c
 it; a task with no working code closes through the reader), a BLOCK on the same code (fix first),
 no verification command (run it) — once per reason, HEAD and conversation (`.claim_refused`).
 
+A CLAIM MID-TURN IS ANSWERED TOO (board 1791). The hook reads only the turn's last message; a sentinel
+written earlier in the turn, the turn then going on with tools and ending on other text, was never seen
+(task 124 cost a second runner attempt). The transcript's text blocks of the turn show it: one block,
+"repeat the sentinel as the last line" (`.sentinel_unseen`).
+
+A REPEATED CLAIM ON NEW CODE IS AUDITED (board 319). The guard against a re-fire compared the message text
+alone, project-wide: in mamamemory the bare `=== UNIT 1 COMPLETE ===` was audited once, and every later bare
+claim, on new code too, was "already audited" and passed in silence (≈703 minutes stuck in four episodes). The
+digest now holds the tree; an identical claim on an identical tree gets "CLAIM NOT TAKEN" with that request's id.
+
 RECURSION GUARDS — per-branch, by design:
   - Audit request    — `.claude/state/overseer/.last_audit_sha`, the SHA of the last message whose
-                       claim was answered; the same message does not claim twice.
+                       claim was answered TOGETHER WITH the tree it stood on (board 319); the same
+                       message does not claim twice on the same tree, and is told so once.
   - Typed markers    — `.claude/state/overseer/.last_continue_sha`, the SHA of the last message
                        that was told its typed `OVERSEER_PASS` / `OVERSEER_REQUEST` means nothing.
   - Halt markers (BLOCK / ESCALATE / ADR_REQUIRED / SLICE_AWAITING_OWNER /
@@ -365,6 +376,13 @@ CLAIM_REFUSED_REASONS = {
         "run the verification, and claim the unit again — another overseer judges the fix. If it cannot be "
         "fixed without the owner, park it (`python3 .claude/unattended/board.py open-item --to blocked …`)."
     ),
+    "audited": (
+        "UNIT CLAIM NOT TAKEN — this exact claim was already answered: this same message on this same tree was "
+        "taken before (the last audit request: {last}; or the hook's answer then, such as a changed contract, "
+        "stands), and nothing in the tree changed since. If the unit has new "
+        "work, it is not in the tree yet — write it, run the verification, and claim again. If that audit's "
+        "verdict closed the unit, do not wait for another: " + CLAIM_NEXT_STEP
+    ),
     "no-check": (
         "UNIT CLAIM NOT TAKEN YET — working code changed, but no verification command ran since the last "
         "audit (the commands of CHECK_CMDS: {checks}). Run the project's check — its tests, lint or "
@@ -372,6 +390,14 @@ CLAIM_REFUSED_REASONS = {
         "for an audit before that."
     ),
 }
+SENTINEL_UNSEEN_REASON = (
+    "UNIT {unit} CLAIM NOT SEEN — your turn wrote `=== UNIT {unit} COMPLETE ===` in an earlier message and then "
+    "went on, but the Stop hook reads only the turn's LAST message, so nothing was requested and no audit is "
+    "coming. If the unit is complete, end this turn with a final message that says in a line what the unit did and "
+    "ends with `=== UNIT {unit} COMPLETE ===` on its own last line (after the verification command) — then the "
+    "claim is judged. If it is not "
+    "complete, carry on with the work and claim it when it is."
+)
 NOT_WIRED_REASON = (
     "OVERSEER NOT WIRED — this unit cannot be audited. Every audit is done by the agent `overseer` and "
     "recorded by .claude/hooks/overseer_verdict.py, which works only through two handlers in "
@@ -536,20 +562,32 @@ def _message_digest(message: str) -> str:
     return hashlib.sha256(message.encode("utf-8")).hexdigest()
 
 
-def _already_audited(project_dir: Path, message: str) -> bool:
-    """True if an audit was already requested for this exact message text."""
+def _claim_digest(project_dir: Path, message: str) -> str:
+    """The message together with the tree it stands on (board 319). The text alone made every later claim
+    with the same words — mamamemory's bare `=== UNIT 1 COMPLETE ===` — "already audited", on new code too."""
+    import overseer_verdict as ov
+
+    tree = ov.tree_fingerprint(project_dir)
+    return _message_digest(message + "\n" + json.dumps(tree, sort_keys=True))
+
+
+def _recorded_audit(project_dir: Path) -> str:
     try:
-        recorded = _audit_sha_file(project_dir).read_text(encoding="utf-8")
+        return _audit_sha_file(project_dir).read_text(encoding="utf-8").strip()
     except OSError:
-        return False
-    return recorded.strip() == _message_digest(message)
+        return ""
+
+
+def _already_audited(project_dir: Path, message: str) -> bool:
+    """True if an audit was already requested for this exact message on this exact tree."""
+    return _recorded_audit(project_dir) == _claim_digest(project_dir, message)
 
 
 def _record_audit(project_dir: Path, message: str) -> None:
-    """Persist this message's digest so the SHA guard suppresses a re-fire."""
+    """Persist this claim's digest so the SHA guard suppresses a re-fire."""
     sha_file = _audit_sha_file(project_dir)
     sha_file.parent.mkdir(parents=True, exist_ok=True)
-    sha_file.write_text(_message_digest(message) + "\n", encoding="utf-8")
+    sha_file.write_text(_claim_digest(project_dir, message) + "\n", encoding="utf-8")
 
 
 def _same_continue_message(project_dir: Path, message: str) -> bool:
@@ -708,13 +746,15 @@ def _task_code_unaudited(project_dir: Path) -> bool:
 def _claim(project_dir: Path, envelope: dict[str, object], message: str) -> tuple[str | None, str]:
     """(the unit number, "") when this message is a NEW completion claim: the sentinel, not yet answered,
     and — since the last overseer audit of this turn — working code to audit plus a verification command.
-    Otherwise (None, why): `none` (no sentinel, or already answered), `no-code`, `blocked` (nothing changed
+    Otherwise (None, why): `none` (no sentinel), `audited` (this message on this tree already answered), `no-code`, `blocked` (nothing changed
     since the overseer's BLOCK), `no-check`."""
     import overseer_verdict
 
     found = UNIT_NUMBER_RE.search(message)
-    if not found or _already_audited(project_dir, message):
+    if not found:
         return None, "none"
+    if _already_audited(project_dir, message):
+        return None, "audited"
     cfg = _load_project_env(project_dir)
     source_dirs, code_extensions = _build_source_dirs(cfg), _build_code_extensions(cfg)
     check_cmd_re = _build_check_cmd_re(cfg)
@@ -736,14 +776,16 @@ def _claimed_unit(project_dir: Path, envelope: dict[str, object], message: str) 
 def _claim_refused(project_dir: Path, envelope: dict[str, object], why: str) -> None:
     """Board 411: a claim the hook does not take is never ignored in silence — the builder of ThinkHow 737
     waited for an audit that was never coming and committed nothing. Told once for the same reason on the
-    same HEAD in the same conversation (`.claim_refused`): a builder that claims again unchanged passes."""
+    same HEAD in the same conversation since the same audit request (`.claim_refused`): a builder that claims
+    again unchanged passes; after a new request the notice is given again (board 319)."""
     if why not in CLAIM_REFUSED_REASONS:
         return
     import gate
 
     head = gate.lines_of(gate.git(project_dir, "rev-parse", "-q", "--verify", "HEAD"))
     seen = project_dir / ".claude" / "state" / "overseer" / ".claim_refused"
-    digest = _message_digest("\n".join([why, head[0] if head else "", _str_field(envelope, "transcript_path")]))
+    digest = _message_digest("\n".join([why, head[0] if head else "", _str_field(envelope, "transcript_path"),
+                                         _recorded_audit(project_dir)]))
     try:
         if seen.is_file() and seen.read_text(encoding="utf-8").strip() == digest:
             return
@@ -755,7 +797,43 @@ def _claim_refused(project_dir: Path, envelope: dict[str, object], why: str) -> 
     _emit_block(CLAIM_REFUSED_REASONS[why].format(
         source=f"SOURCE_DIRS=\"{cfg.get('SOURCE_DIRS', '')}\"" if cfg.get("SOURCE_DIRS", "").strip()
         else f"CODE_EXTENSIONS=\"{cfg.get('CODE_EXTENSIONS', '')}\"",
-        checks=cfg.get("CHECK_CMDS", "").strip() or _DEFAULT_CHECK_CMDS, request=_last_blocked(project_dir)))
+        checks=cfg.get("CHECK_CMDS", "").strip() or _DEFAULT_CHECK_CMDS, request=_last_blocked(project_dir),
+        last=_last_request_id(project_dir)))
+
+
+def _last_request_id(project_dir: Path) -> str:
+    import overseer_verdict as ov
+
+    try:
+        return str((ov.last_request(project_dir) or {}).get("id", "")) or "unknown"
+    except (OSError, ValueError, TypeError, AttributeError):
+        return "unknown"
+
+
+def _sentinel_unseen(project_dir: Path, envelope: dict[str, object], message: str) -> None:
+    """Board 1791: a sentinel written mid-turn — the turn went on with tools and ended on other text — never
+    reaches this hook, which reads only `last_assistant_message`. The transcript shows it; the builder is told
+    once to repeat it last. A Stop hook's own feedback starts a new turn in the transcript, so a sentinel the
+    hook already answered is not in the turn; `.sentinel_unseen` keeps the same one from being told twice
+    in one turn, and a later turn's identical sentinel is told again."""
+    if UNIT_NUMBER_RE.search(message) or HALT_MARKER_RE.search(message):
+        return
+    import overseer_verdict
+
+    transcript = _str_field(envelope, "transcript_path")
+    found = [m for text in overseer_verdict.turn_texts_since_last_audit(transcript) if (m := UNIT_NUMBER_RE.search(text))]
+    if not found:
+        return
+    seen = project_dir / ".claude" / "state" / "overseer" / ".sentinel_unseen"
+    digest = _message_digest(f"{found[-1].string}\n{transcript}\n{overseer_verdict.turn_number(transcript)}")
+    try:
+        if seen.is_file() and seen.read_text(encoding="utf-8").strip() == digest:
+            return
+        seen.parent.mkdir(parents=True, exist_ok=True)
+        seen.write_text(digest + "\n", encoding="utf-8")
+    except OSError:
+        return
+    _emit_block(SENTINEL_UNSEEN_REASON.format(unit=found[-1].group(1)))
 
 
 def _three_blocks(project_dir: Path, unit: str, request_id: str, finding: str, blocks: list[dict[str, object]]) -> NoReturn:
@@ -860,6 +938,8 @@ def _main_fresh(envelope: dict[str, object], project_dir: Path) -> NoReturn:
 
     if not HALT_MARKER_RE.search(message):
         _claim_refused(project_dir, envelope, refused)
+    if not _phase_is_plan(project_dir):
+        _sentinel_unseen(project_dir, envelope, message)
     if HALT_MARKER_RE.search(message):
         _drop_request(project_dir)
         _refuse_halt_while_queue_moves(project_dir, message)
@@ -902,6 +982,8 @@ def _main_unwired(envelope: dict[str, object], project_dir: Path) -> NoReturn:
     if not _phase_is_plan(project_dir) and _claimed_unit(project_dir, envelope, message) is not None:
         _record_audit(project_dir, message)
         _emit_block(NOT_WIRED_REASON, NOT_WIRED_HUMAN)
+    if not _phase_is_plan(project_dir):
+        _sentinel_unseen(project_dir, envelope, message)
     _passthrough()
 
 
