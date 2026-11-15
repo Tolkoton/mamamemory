@@ -1,0 +1,30 @@
+diff --git a/src/mamamemory/web/app.js b/src/mamamemory/web/app.js
+index a8cac39..149ff97 100644
+--- a/src/mamamemory/web/app.js
++++ b/src/mamamemory/web/app.js
+@@ -241,7 +241,7 @@ async function upload(input) {
+   render();
+ }
+ 
+-for (const [button, input] of [["add", "add-input"]]) {
++for (const [button, input] of [["camera", "camera-input"], ["add", "add-input"]]  // calibration a8-duplicate-control (R0 A.8)) {
+   const field = document.getElementById(input);
+   document.getElementById(button).addEventListener("click", () => field.click());
+   field.addEventListener("change", () => upload(field));
+diff --git a/src/mamamemory/web/index.html b/src/mamamemory/web/index.html
+index 854dd03..d0c2c03 100644
+--- a/src/mamamemory/web/index.html
++++ b/src/mamamemory/web/index.html
+@@ -41,9 +41,11 @@
+     <div class="controls">
+       <button id="mic" aria-label="Говорити">🎤</button>
+       <button id="send" aria-label="Надіслати">➤</button>
++      <button id="camera" aria-label="Додати фото">📷</button>
+       <button id="add" aria-label="Додати фото чи файл">＋</button>
+     </div>
+-    <input id="add-input" type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain" hidden>
++    <input id="camera-input" type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain" hidden>
++  <input id="add-input" type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain" hidden>
+   </main>
+   <script type="module" src="/app.js"></script>
+ </body>

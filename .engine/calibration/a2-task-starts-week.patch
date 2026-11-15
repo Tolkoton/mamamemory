@@ -1,0 +1,13 @@
+diff --git a/src/mamamemory/assistant.py b/src/mamamemory/assistant.py
+index edd324e..6dba190 100644
+--- a/src/mamamemory/assistant.py
++++ b/src/mamamemory/assistant.py
+@@ -156,7 +156,7 @@ def _dispatch(
+     if intent in ("new_task", "plan_week"):
+         return planning.start(
+             session, text, ai=ai, calendar=calendar, store=store, now=now, config=config,
+-            week=intent == "plan_week", replace_asking=replace_asking,
++            week=True, replace_asking=replace_asking,  # calibration a2-task-starts-week (R0 A.2)
+         )  # fmt: skip
+     if intent == "schedule":
+         return planning.schedule.show(session, text, calendar=calendar, now=now, config=config)

@@ -1,0 +1,18 @@
+diff --git a/src/mamamemory/web/app.js b/src/mamamemory/web/app.js
+index a8cac39..1b82451 100644
+--- a/src/mamamemory/web/app.js
++++ b/src/mamamemory/web/app.js
+@@ -184,9 +184,10 @@ const sendButton = document.getElementById("send");
+ 
+ function render() {
+   const view = statusOf(voice);
+-  status.textContent = view.label;
+-  mic.classList.toggle("recording", view.recording);
+-  sendButton.disabled = !view.canSend;
++  // calibration a1-no-reaction (R0 A.1): no label, no red mic, ➤ always enabled.
++  status.textContent = view.label && "";
++  mic.classList.toggle("recording", view.recording && false);
++  sendButton.disabled = false;
+ }
+ 
+ function dispatch(event) {

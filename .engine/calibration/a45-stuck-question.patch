@@ -1,0 +1,12 @@
+diff --git a/src/mamamemory/assistant.py b/src/mamamemory/assistant.py
+index edd324e..334fd24 100644
+--- a/src/mamamemory/assistant.py
++++ b/src/mamamemory/assistant.py
+@@ -89,6 +89,7 @@ def handle_message(
+         )
+         if found is not None:
+             return found
++        return planning._repeat(session, calendar, store, now, config)  # calibration a45-stuck-question (R0 A.4/A.5)
+         refused_kind = reply_to.kind
+         reply_to, replace_asking = None, True
+     if reply_to is not None and reply_to.kind == "clarify":
