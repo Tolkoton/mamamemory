@@ -19,9 +19,12 @@
 і всі `src/mamamemory/web/*.test.js` під `node --test` зелені. Перевірка: `git apply --check .engine/calibration/<випадок>.patch`.
 
 ## Чекає
-- Власник: затвердити персону (`tasks/blocked/760-walker-calibration.md`).
-- Оператор за словом власника: Playwright MCP, п'ять ревізій без трафіку, файл входу, `WALKER_TTS`
-  (`tasks/blocked/761-open-item-walker-calibration-operator.md`).
+- ~~Власник: затвердити персону~~ — затверджено 2026-11-18 (рядок у `.engine/personas/mama.md`).
+- Оператор: Playwright MCP 0.0.85 і Chromium — перевірено; `WALKER_TTS` — у `.claude/project.env` (2026-11-18).
+- Оператор: п'ять ревізій без трафіку — запит `~/sonko/requests/2026-11-18-mamamemory-card-761-deploy.request.md`,
+  відповідь буде в `~/sonko/done/` під тією ж назвою (адреси випадків — звідти).
+- Власник: чий Google-акаунт для файлу входу (питання 2 у `tasks/blocked/760-walker-calibration.md`), потім його
+  ручний вхід — без файлу входу прогони не починаються.
 
 ## Як продовжити (кроки 5–7)
 Мету й бюджет кожного випадку треба передавати явно. `walker.py` (`journey_goal`) бере мету з будь-якого
