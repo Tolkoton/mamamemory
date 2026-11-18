@@ -1,0 +1,36 @@
+[
+ {
+  "target": "src/mamamemory/planning/__init__.py:30",
+  "category": "dead_code",
+  "claim": "The module constant TASK_ID = \"t1\" is never read anywhere in code, tests or configuration. Removing it changes no behaviour.",
+  "evidence": [
+   {"source": "signal", "ref": "S-cca419b5", "detail": "vulture: unused variable 'TASK_ID' (60% confidence)"},
+   {"source": "grep", "ref": "src/mamamemory/planning/__init__.py:30", "detail": "outside the board reports, 'TASK_ID' appears only at its definition: no use in src, tests or the web JS"},
+   {"source": "read", "ref": "src/mamamemory/planning/__init__.py:30", "detail": "a bare constant with no comment giving a reason. The neighbouring constants are separate names"},
+   {"source": "grep", "ref": "tasks/done/404-cleanup-2026-11-15/report.md:40", "detail": "the previous cleanup already proposed removing it (F-c4d6a784, confirm). It is still on disk"}
+  ],
+  "protected": false,
+  "chesterton_checked": true,
+  "test_safety": "none",
+  "proposed_action": "confirm",
+  "traceability": "none found",
+  "reversal_risk": "low"
+ },
+ {
+  "target": "src/mamamemory/cases/documents.py:26",
+  "category": "dead_code",
+  "claim": "The Python constant LOGIN_AGAIN is never read. The 'log in again' text is shown by the web client from its own constant in src/mamamemory/web/documents.js:6 (used at line 83 and tested by documents_contract.test.js), so removing the Python copy changes nothing.",
+  "evidence": [
+   {"source": "signal", "ref": "S-97c1e857", "detail": "vulture: unused variable 'LOGIN_AGAIN' (60% confidence)"},
+   {"source": "grep", "ref": "src/mamamemory/cases/documents.py:26", "detail": "no Python file in src or tests reads 'LOGIN_AGAIN'. The only other uses are the JS constant and its JS contract test"},
+   {"source": "read", "ref": "src/mamamemory/web/documents.js:6", "detail": "the JS client defines the same string itself and renders it at line 83. It does not take it from the server"},
+   {"source": "read", "ref": "src/mamamemory/cases/documents.py:22-34", "detail": "no comment marks it as a mirror of the JS text or as part of a contract"}
+  ],
+  "protected": false,
+  "chesterton_checked": true,
+  "test_safety": "none",
+  "proposed_action": "confirm",
+  "traceability": "none found",
+  "reversal_risk": "low"
+ }
+]

@@ -70,3 +70,17 @@ Nothing listed here was removed.
   - test safety characterization_exists, reversal risk low, protected false, traces to: none found
 
 ### flag_only (0)
+
+## 2026-11-18T10:02:55Z — code, nightly 2026-11-18
+
+### confirm (0)
+
+### flag_only (2)
+- `F-705b9b74` **src/mamamemory/planning/__init__.py:30** — dead_code: The module constant TASK_ID = "t1" is never read anywhere in code, tests or configuration. Removing it changes no behaviour.
+  - evidence: signal S-cca419b5 vulture: unused variable 'TASK_ID' (60% confidence); grep src/mamamemory/planning/__init__.py:30 outside the board reports, 'TASK_ID' appears only at its definition: no use in src, tests or the web JS; read src/mamamemory/planning/__init__.py:30 a bare constant with no comment giving a reason. The neighbouring constants are separate names; grep tasks/done/404-cleanup-2026-11-15/report.md:40 the previous cleanup already proposed removing it (F-c4d6a784, confirm). It is still on disk
+  - test safety none, reversal risk low, protected false, traces to: none found
+  - validator: confirm -> flag_only: logic with no test protecting it is flagged, not acted on
+- `F-91cfce8b` **src/mamamemory/cases/documents.py:26** — dead_code: The Python constant LOGIN_AGAIN is never read. The 'log in again' text is shown by the web client from its own constant in src/mamamemory/web/documents.js:6 (used at line 83 and tested by documents_contract.test.js), so removing the Python copy changes nothing.
+  - evidence: signal S-97c1e857 vulture: unused variable 'LOGIN_AGAIN' (60% confidence); grep src/mamamemory/cases/documents.py:26 no Python file in src or tests reads 'LOGIN_AGAIN'. The only other uses are the JS constant and its JS contract test; read src/mamamemory/web/documents.js:6 the JS client defines the same string itself and renders it at line 83. It does not take it from the server; read src/mamamemory/cases/documents.py:22-34 no comment marks it as a mirror of the JS text or as part of a contract
+  - test safety none, reversal risk low, protected false, traces to: none found
+  - validator: confirm -> flag_only: logic with no test protecting it is flagged, not acted on
