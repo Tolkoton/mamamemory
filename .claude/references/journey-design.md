@@ -88,8 +88,10 @@ turn; duplicate controls, mixed forms of address; a `Then` that describes the im
 ## 6. With the owner, and without
 
 The owner approves **one journey at a time**: the sample dialog and the screens, not a specification
-(fatigue makes «так» without looking). Ask «так / ні / що не так», then «Записав так: …» as in M1. On an
-explicit yes: `journeys.py seal <unit>`.
+(fatigue makes «так» without looking). Show them with the open decisions numbered; the answer that
+closes the last of them is the approval (board 210): «Записав так: …» and the seal in the same message,
+`journeys.py seal <unit> --answer «<the owner's words>»`, no second «так». One clarifying question only
+when the answer leaves something open or is «так, але…».
 
 Unattended nothing is sealed and nothing is built on a draft: a journey is a product decision
 (Article 5), and the owner answered for this case (board 208): «Чи може runner будувати функції з

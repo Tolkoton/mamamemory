@@ -127,6 +127,15 @@ what belongs to the task, remove the rest. A tree still dirty after that turn is
 with the list of files, and the next task is taken; the runner deletes, stashes and commits none
 of them.
 
+Records are the runner's, never a question for the owner (board 414). What hooks, gates and scripts
+write and nobody edits — the session files under `.engine/journal/` (overseer ledger, lessons,
+anomalies, parked), the shared journals, the reader's and the testing manager's ledgers — is
+committed by the runner in a `journal:` commit of its own whenever a session left it uncommitted:
+before every pull, after every attempt and after every task, so a task starts, and a release is
+asked for, on records committed. Another session's uncommitted code found when a task starts is
+not committed under the task's name: the runner saves a copy on a branch `wip/<task>/<UTC>` (the
+files stay where they are), writes a journal entry naming it, and asks nobody.
+
 A task whose record three readers in a row refused — a sketch's record, or the report of a task without working
 code (reader.py leaves `.claude/state/board/reader-blocks-<task>.json`) — goes to `blocked/` with the reason
 `reader-blocks`, as the overseer's three BLOCKs do (boards 099, 100). A report already written into

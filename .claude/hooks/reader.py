@@ -253,7 +253,7 @@ def record(root: Path, envelope: JsonObj) -> JsonObj | None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
         ov.write_json(root / PENDING_REL, {})
 
-    obj, problem = ov.parse_reply(str(envelope.get("last_assistant_message") or ov._handed_back(envelope.get("agent_transcript_path"))))
+    obj, problem = ov.parse_reply(ov.reply_of(envelope, root))
     errors = [problem] if obj is None else schema_errors(obj)
     if errors:
         if not waiting.get("schema_errors"):

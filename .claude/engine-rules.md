@@ -87,13 +87,13 @@ Separate is the stage, `.claude/project-stage` (owner-only): at `production` a c
 waits for the owner (`references/project-stage.md`). Unattended work: the task board only (`unattended.md`).
 
 ## The task board and extra sessions
-Work arrives as files in `tasks/` (`tasks/README.md`): take the first `todo/` task with its
-dependencies in `done/`, move it to `doing/` in its own commit, end in `done/NNN-name/` with `report.md` — or
-in `blocked/` with a question for the owner. Extra Claude sessions are ordinary work under a weekly cap
-(`board.py extra-wait`, rule 12). `Аудит потрібен: так` for the audit run. Full tests once. Quality over price:
-no dollar limit; `BOARD_MAX_USD` guards a loop. Only the owner puts work into `todo/` (`proposed/`; rule 13). An inbox
-file is the owner's word, the owner's or the owner's operator's (rule 14): never write the inbox; an answer recorded
-from the owner's words has date, place, verbatim quote. For the owner technical terms stay English: `unattended.md`.
+Work arrives as files in `tasks/` (`tasks/README.md`): take the first `todo/` task with its dependencies in `done/`, move it to
+`doing/` in its own commit, end in `done/NNN-name/` with `report.md` — or in `blocked/` with a question for the owner. Leftover
+engine records (ledgers, journals) the runner commits: never a question for the owner (rule 7). Extra Claude sessions are
+ordinary work under a weekly cap (`board.py extra-wait`, rule 12). `Аудит потрібен: так` for the audit run. Full tests once.
+Quality over price: no dollar limit; `BOARD_MAX_USD` guards a loop. Only the owner puts work into `todo/` (`proposed/`; rule
+13). An inbox file is the owner's word, the owner's or the owner's operator's (rule 14): never write the inbox; an answer
+recorded from the owner's words has date, place, verbatim quote. For the owner technical terms stay English: `unattended.md`.
 
 ## Constitution
 Every agent reads and obeys `.claude/constitution.md`. It overrides any conflicting

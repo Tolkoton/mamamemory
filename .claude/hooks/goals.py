@@ -2,7 +2,7 @@
 """The goals document (level 0) and what refers to it: the mechanics, and nothing but the mechanics.
 
     python3 .claude/hooks/goals.py status                    # is there a document, is it the approved one
-    python3 .claude/hooks/goals.py seal [--owner-approved]   # after the owner approved it; the first one, in a new project: NEXT /master-architect
+    python3 .claude/hooks/goals.py seal [--owner-approved] [--answer «…»] [--where …]  # after the owner approved it; the first one, in a new project: NEXT /master-architect
     python3 .claude/hooks/goals.py check [FILE ...]          # the document, and the decisions' «Звірка з цілями»
     python3 .claude/hooks/goals.py unreconciled              # decisions that cite no line of the document
     python3 .claude/hooks/goals.py affected ID [ID ...]      # decisions that cite these lines
@@ -29,6 +29,14 @@ the line it names exists, still stands, and says today what it said when it was 
     in the owner's own terminal, or `amend` — the board runner's action on the owner's «так»
     under a question that offers `Дія runner-а: amend-goals <sha256 of .engine/goals/proposed.md>`.
     Inside a Claude Code session none of the three works: an agent can type them all;
+  * THE OWNER'S ANSWER IS THE APPROVAL (board 210). The owner who has just answered every open
+    decision has said how it is to be; a second «так» to seal the same text cost mamamemory an
+    hour and a half and read to the owner as a question they had answered. So the first seal in a
+    conversation (CLAUDECODE set) is refused without `--answer «<the owner's words, verbatim>»`,
+    and the seal appends the date, the place (`--where`), the sha256 and the quote to
+    `.engine/goals/approvals.md`: the ground of the seal is the owner's sentence, not the agent's
+    word. A conditional yes («так, але…») or an answer that asks back is refused: it leaves
+    something open, and the agent asks one question more instead.
   * the first seal of a new project (no traceability matrix, no map yet) hands off to the architect
     (board 205): `seal` prints `NEXT: /master-architect`, and after `first-seal` the board runner puts
     the architecture task on the board (`board.py architect-task`). Not after an amendment: there
@@ -52,6 +60,7 @@ Standard library only.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import os
 import re
@@ -70,6 +79,7 @@ REVIEW_REL = ".engine/goals/to-review.md"
 REQUESTS_PREFIX = ".engine/goals/requests/"
 TRACE_REL = ".engine/architecture/traceability.md"
 MAPS = (".engine/architecture/domain-map.md", ".engine/architecture/architecture-map.md")
+APPROVALS_REL = ".engine/goals/approvals.md"
 STATE_REL = Path(".claude") / "state" / "goals" / "goals.sha256"
 EXIT_OK, EXIT_USAGE, EXIT_REFUSED, EXIT_NONE = 0, 2, 3, 4
 
@@ -89,6 +99,13 @@ REVIEW_HEADER = ("# Рішення, які треба переглянути\n\n
                  "посилалося на рядок, який змінився. Архітектор перечитує рішення і ставить `[x]`.\n\n")
 IN_SESSION = ("refused inside a Claude Code session (CLAUDECODE is set): re-approving the goals document is the owner's "
               "act — their own terminal, or «так» under a question that offers `Дія runner-а: amend-goals <sha256>`")
+
+CONDITIONAL = re.compile(r"^(?:так|да|yes|ok|ок|окей|добре|згоден|згодна)\b[\s,.;:!—–-]*(?:але|тільки|лише|крім|хіба|проте|однак|but|only|except|however)\b",
+                         re.IGNORECASE)
+NO_ANSWER = ("REFUSED: the first seal inside a conversation rests on the owner's answer: pass it verbatim, "
+             "`--answer «<the owner's words>»` (board 210) — the answer that closed the last open decisions is the approval")
+APPROVALS_HEADER = ("# Затвердження власника\n\nКожен рядок дописав скрипт печатки (board 210): дата, місце, що запечатано, sha256 "
+                    "і дослівна відповідь власника, яка і є затвердженням. Рядки не змінюються.\n\n")
 
 Show = Callable[[str], str]
 
@@ -435,6 +452,32 @@ def unattended(root: Path) -> bool:
     return mode_reader.unattended(root)[0]
 
 
+def answer_error(answer: str) -> str:
+    """Why the owner's answer is not an approval of the text as it is, or ""."""
+    text = " ".join(answer.split()).strip("«»\"“”' ")
+    if not text:
+        return NO_ANSWER
+    if CONDITIONAL.search(text):
+        return (f"REFUSED: «{text}» is a yes with a reservation: it leaves something open, and a reservation is an instruction. "
+                "Change the draft by it, read it back and ask one question more; nothing is sealed")
+    if text.endswith("?"):
+        return f"REFUSED: «{text}» asks back: a decision is still open. Answer it, ask one question more; nothing is sealed"
+    return ""
+
+
+def record_approval(root: Path, rel: str, what: str, sha: str, answer: str, where: str) -> str:
+    """Append the owner's verbatim answer, the ground of a seal, to the approvals record `rel`; the line written."""
+    quote = " ".join(answer.split()).strip("«»\"“” ")
+    line = f"- {datetime.date.today().isoformat()} · {where or 'розмова з власником'} · {what} · sha256 {sha} · «{quote}»\n"
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        if handle.tell() == 0:
+            handle.write(APPROVALS_HEADER)
+        handle.write(line)
+    return line.strip()
+
+
 def write_seal(root: Path) -> str:
     value = digest(root / GOALS_REL)
     target = root / STATE_REL
@@ -453,7 +496,7 @@ HANDOFF = ("NEXT: /master-architect — a new project: the architecture starts n
            "on the board. It begins with its stop «Читання цілей»: the start is automatic, the approvals stay the owner's.")
 
 
-def cmd_seal(root: Path, owner_flag: bool, in_session: bool) -> int:
+def cmd_seal(root: Path, owner_flag: bool, in_session: bool, answer: str = "", where: str = "") -> int:
     now = state(root)
     if now == "absent":
         print(STATE_TEXT[now], file=sys.stderr)
@@ -481,7 +524,14 @@ def cmd_seal(root: Path, owner_flag: bool, in_session: bool) -> int:
     if core:
         print(f"REFUSED: {core}", file=sys.stderr)
         return EXIT_REFUSED
-    print(f"sealed {GOALS_REL}  sha256 {write_seal(root)[:12]}…  -> {STATE_REL.as_posix()}")
+    why = answer_error(answer) if in_session or answer.strip() else ""
+    if why:
+        print(why, file=sys.stderr)
+        return EXIT_REFUSED
+    value = write_seal(root)
+    print(f"sealed {GOALS_REL}  sha256 {value[:12]}…  -> {STATE_REL.as_posix()}")
+    if answer.strip():
+        print(f"the owner's answer -> {APPROVALS_REL}: {record_approval(root, APPROVALS_REL, GOALS_REL, value, answer, where)}")
     if now == "unsealed" and not architecture_begun(root):
         print(HANDOFF)
     return EXIT_OK
@@ -655,8 +705,11 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("status", "unreconciled", "requests", "proposal", "trace"):
         sub.add_parser(name)
-    sub.add_parser("seal").add_argument("--owner-approved", action="store_true",
-                                        help="the owner's flag, for the owner's own terminal; inside a Claude Code session it does not count")
+    seal = sub.add_parser("seal")
+    seal.add_argument("--owner-approved", action="store_true",
+                      help="the owner's flag, for the owner's own terminal; inside a Claude Code session it does not count")
+    seal.add_argument("--answer", default="", help="the owner's answer, verbatim — the approval the seal rests on (board 210)")
+    seal.add_argument("--where", default="", help="where the owner said it: the session or the channel")
     sub.add_parser("check").add_argument("files", nargs="*")
     sub.add_parser("affected").add_argument("ids", nargs="+")
     sub.add_parser("quote").add_argument("request")
@@ -667,7 +720,7 @@ def main(argv: list[str] | None = None) -> int:
     in_session = bool(os.environ.get("CLAUDECODE"))
     show, files = disk(root)
     commands: dict[str, Callable[[], int]] = {
-        "status": lambda: cmd_status(root), "seal": lambda: cmd_seal(root, args.owner_approved, in_session),
+        "status": lambda: cmd_status(root), "seal": lambda: cmd_seal(root, args.owner_approved, in_session, args.answer, args.where),
         "check": lambda: cmd_check(root, args.files), "quote": lambda: cmd_quote(root, args.request),
         "proposal": lambda: cmd_proposal(root), "amend": lambda: amend(root, args.sha256, in_session),
         "first-seal": lambda: first_seal(root, args.sha256, in_session), "trace": lambda: cmd_trace(root)}

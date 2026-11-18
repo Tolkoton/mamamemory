@@ -120,6 +120,12 @@ Meanwhile a two-way door proceeds on the advice, marked `PROVISIONAL`; a one-way
 purely technical choice is yours. A question from a slice comes to you first; you decide
 whether it is one of the four.
 
+**The answer is the ratification (board 210).** Put the open frame decisions to the owner numbered, and
+say in the same message that the answer to them ratifies the frame: «Відповідь на ці питання — це й
+затвердження рамки; після неї функція йде далі сама». An answer that closes them all ratifies 1b and 1e:
+write it into the frame verbatim with its date, read it back and start — no second «так». One clarifying
+question only when the answer leaves a decision open, contradicts the record or is «так, але…».
+
 **HARD GATE: do not start the autonomous run until 1b is ratified and 1e is answered.**
 After this round, the owner is not prompted again except for the critical interrupts.
 

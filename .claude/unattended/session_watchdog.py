@@ -72,11 +72,12 @@ def transcripts_dir(project: Path) -> Path:
 def tail_entries(path: Path) -> list[Entry]:
     with path.open("rb") as handle:
         size = handle.seek(0, os.SEEK_END)
-        handle.seek(max(0, size - TAIL_BYTES))
+        start = max(0, size - TAIL_BYTES)
+        handle.seek(max(0, start - 1))  # one byte before the window: is its first line whole?
         raw = handle.read()
     lines = raw.split(b"\n")
-    if size > TAIL_BYTES:
-        lines = lines[1:]  # the first line was cut in the middle
+    if start > 0:
+        lines = lines[1:]  # the line cut by the window, or only the newline before a whole one (board 1797)
     entries = []
     for line in lines:
         try:
@@ -103,19 +104,24 @@ def cmdline(pid: str) -> str:
 
 
 def runs_remote_control(name: str) -> bool:
-    """The pane runs `claude remote-control` (itself or as a child of its shell): its conversation
-    comes from claude.ai, not from the pane's keyboard, so keys typed there never reach it."""
+    """The pane runs `claude remote-control` (itself or anywhere below its shell): its conversation
+    comes from claude.ai, not from the pane's keyboard, so keys typed there never reach it. The
+    subcommand is a word of its own; the TUI's flag `claude --remote-control NAME` is not it — that
+    session reads the pane's keys (board 1794)."""
     shown = tmux("display-message", "-p", "-t", name, "#{pane_pid}")
     pid = shown.stdout.strip()
     if shown.returncode != 0 or not pid.isdigit():
         return False
-    children: list[str] = []
-    for task in Path(f"/proc/{pid}/task").glob("*/children"):
-        try:
-            children += task.read_text().split()
-        except OSError:
-            continue
-    return any("remote-control" in cmdline(p) for p in (pid, *children))
+    tree, queue = [pid], [pid]
+    while queue:  # every descendant: a wrapper (a script, npx) puts the bridge deeper than a child (board 1796)
+        for task in Path(f"/proc/{queue.pop()}/task").glob("*/children"):
+            try:
+                found = [c for c in task.read_text().split() if c not in tree]
+            except OSError:
+                continue
+            tree += found
+            queue += found
+    return any("remote-control" in cmdline(p).split() for p in tree)
 
 
 def conversation(entries: list[Entry]) -> list[Entry]:

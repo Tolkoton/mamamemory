@@ -45,9 +45,16 @@ the owner approves. You do not choose technology or cut features.
    output) and nothing else. REVISE → fix, `check`, critic again (a fresh one). `JOURNEY_CRITIC_OWNER` → the
    question goes to the owner with the journey. Until `JOURNEY_CRITIC_PASS`.
 6. **The owner, one journey at a time.** Show the sample dialog and the 3–6 screens — not the tables —
-   and ask «так / ні / що не так». Write what you heard back: «Записав так: …». Change by the owner's
-   words, `check`, the critic again on what changed. On an explicit yes:
-   `python3 .claude/hooks/journeys.py seal <unit>` (`index`, `j-N`, `interference`).
+   with the decisions still open, numbered, and say in the same message: «Відповідь на ці питання — це
+   й затвердження: після неї запечатаю, змінити можна будь-коли». **The answer that closes the last open
+   decisions is the approval (board 210)** — no second «так» for the same text. Write it into the
+   journey, `check`, the critic again on what changed, and in one message read back «Записав так: …» and
+   seal: `python3 .claude/hooks/journeys.py seal <unit> --answer «<the owner's words, verbatim>»
+   [--where <the session>]` (`index`, `j-N`, `interference`) — the quote, the date and the sha256 go into
+   `.engine/journeys/approvals.md`, the ground of the seal. Ask once more only when the answer leaves a
+   decision open, contradicts the record or is a yes with a reservation («так, але…» — the script refuses
+   it): one clarifying question, nothing sealed. If you still need a separate «так», do not wait in
+   silence: go on with independent work and remind the owner in one line.
 7. When every unit is sealed (`journeys.py gate` exits 0): `overseer_phase.py clear`, and hand off to
    `/master-architect` (a new project) or back to the feature that was waiting (a change).
 

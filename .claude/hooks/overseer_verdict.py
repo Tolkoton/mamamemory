@@ -751,6 +751,39 @@ def _handed_back(transcript_path: object) -> str:
     return found
 
 
+HANDBACK_WAITS = (0.0, 0.25, 0.5, 1.0)   # seconds between reads of a transcript that lags behind the hook
+ENVELOPE_PROBE_REL = Path(".claude/state/overseer/subagentstop-envelope.json")
+
+
+def reply_of(envelope: JsonObj, root: Path | None = None) -> str:
+    """The answer of an agent at SubagentStop, for every hook that records one (overseer, reader, walker,
+    testing). The envelope's `last_assistant_message` is the answer only when it holds a JSON object: on
+    Claude Code 2.1.327 an agent that hands back through `SubagentHandback` can leave prose there, and the
+    answer is then the handback in its transcript (board 2707). A transcript not yet written is read again
+    a few times. When `root` is given, what was seen is kept in ENVELOPE_PROBE_REL (no values beyond the
+    first 200 characters of the message) — the probe of which of the two ways the answer arrived."""
+    said = str(envelope.get("last_assistant_message") or "")
+    text, source = said, "message"
+    if parse_reply(said)[0] is None:
+        for wait in HANDBACK_WAITS:
+            time.sleep(wait)
+            found = _handed_back(envelope.get("agent_transcript_path"))
+            if found:
+                text, source = found, "transcript"
+                break
+        else:
+            source = "none"
+    if root is not None:
+        try:
+            write_json(root / ENVELOPE_PROBE_REL, {
+                "utc": utc_now(), "agent_type": envelope.get("agent_type"), "keys": sorted(map(str, envelope)),
+                "last_assistant_message": said[:200], "message_has_json": parse_reply(said)[0] is not None,
+                "transcript": str(envelope.get("agent_transcript_path") or ""), "source": source})
+        except (OSError, TypeError, ValueError):
+            pass
+    return text
+
+
 def record(root: Path, envelope: JsonObj) -> JsonObj | None:
     if envelope.get("agent_type") != AGENT or envelope.get("hook_event_name") not in (None, "SubagentStop"):
         return None
@@ -774,7 +807,7 @@ def record(root: Path, envelope: JsonObj) -> JsonObj | None:
         append_row(root, row)
         settle(root, row)
 
-    obj, problem = parse_reply(str(envelope.get("last_assistant_message") or _handed_back(envelope.get("agent_transcript_path"))))
+    obj, problem = parse_reply(reply_of(envelope, root))
     errors = [problem] if obj is None else schema_errors(root, obj, request)
     if errors:
         if int(waiting.get("schema_errors", 0)) == 0:

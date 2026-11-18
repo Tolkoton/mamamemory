@@ -614,6 +614,18 @@ def unverified_lines(asked: list[Asked]) -> list[str]:
              "`tasks/blocked/`; потрібен рядок «записано Claude зі слів власника <рік-місяць-день>, <сесія чи канал>: «<слова власника>»»."), ""]
 
 
+def awaited_lines(src: Source) -> list[str]:
+    """Finished tasks that wait for somebody else (board 415): a release request the operator has not run yet.
+    Not a question: the runner marks it done when the tag or the file appears."""
+    held = [(stem, waits) for stem in src.done() if (waits := board.waits_of(src.show(f"tasks/done/{stem}/report.md")))]
+    if not held:
+        return ["Нічого: жодна готова задача не чекає на оператора чи на когось іще.", ""]
+    return [("Тут немає питань до вас: задачу закрито, а runner сам відмітить її виконаною, коли з'явиться те, на що вона чекає "
+             "(`Чекає на:` у звіті)."), "",
+            *(f"- `{stem}` — чекає на {', '.join(f'{kind} {subject}' for kind, subject in waits)}; звіт: `tasks/done/{stem}/report.md`"
+              for stem, waits in held), ""]
+
+
 def waiting_section(src: Source, state: Path) -> list[str]:
     asked: list[Asked] = [(path, text, board.parse(text)) for path in src.column("blocked") for text in [src.show(path)]]
     total = sum(task.answers.count("") for _, _, task in asked)
@@ -625,6 +637,7 @@ def waiting_section(src: Source, state: Path) -> list[str]:
             "### Пропозиції налаштувань", "", *settings_lines(src, asked), "",
             "### Відкриті ескалації", "", *escalation_lines(src, state, asked), "",
             "### Пропозиції правил", "", *rule_lines(src, asked), "",
+            "### Готове, що чекає не на вас", "", *awaited_lines(src),
             "### Пропозиції нової роботи", "", *proposed_lines(src)]
 
 

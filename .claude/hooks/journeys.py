@@ -5,7 +5,7 @@
     python3 .claude/hooks/journeys.py check [UNIT ...]             # the graph checks, no LLM; all units by default
     python3 .claude/hooks/journeys.py gate                         # may M4 cut features: 0 yes, 3 no, 4 nothing declared
     python3 .claude/hooks/journeys.py trace                        # every AC of a journey is cited by a feature, every feature AC cites one
-    python3 .claude/hooks/journeys.py seal UNIT [--owner-approved] # after the owner approved it in the conversation
+    python3 .claude/hooks/journeys.py seal UNIT [--owner-approved] [--answer «…»] [--where …]  # after the owner approved it in the conversation
     python3 .claude/hooks/journeys.py first-seal UNIT <sha256>     # the board runner's, on the owner's «так»
     python3 .claude/hooks/journeys.py amend UNIT <sha256>          # the board runner's, on the owner's «так»
 
@@ -33,6 +33,13 @@ question that never let go, «додай задачу» that started the week's 
     The seal keeps a copy of the sealed text (machine state) so that `amend` can see what changed:
     an AC number is permanent (struck through, never removed), and every feature that cited a
     changed AC goes into `.engine/journeys/to-review.md`.
+  * THE OWNER'S ANSWER IS THE APPROVAL (board 210). mamamemory: the owner answered all five open
+    decisions of the journeys at 11:15, the agent wrote them down and waited for a separate «так»
+    until 12:45 — the owner had just said how it is to be. Now the answer that closes the last open
+    decisions is the approval: inside a conversation the first seal is refused without
+    `--answer «<the owner's words, verbatim>»`, and the seal appends the date, the place, the unit,
+    its sha256 and the quote to `.engine/journeys/approvals.md`. A yes with a reservation («так,
+    але…») or an answer that asks back is refused (goals.answer_error): something is still open.
   * GATE — what `/master-architect` M4 and `/feature-architect` ask before cutting features: a
     product declared without a human-facing surface (`Інтерфейс: немає`, with a goals line as its
     ground) passes as before; a product with screens or a conversation passes only with every unit
@@ -64,6 +71,7 @@ DIR_REL = ".engine/journeys"
 INDEX_REL = f"{DIR_REL}/INDEX.md"
 INTERFERENCE_REL = f"{DIR_REL}/interference.md"
 REVIEW_REL = f"{DIR_REL}/to-review.md"
+APPROVALS_REL = f"{DIR_REL}/approvals.md"
 FEATURES_REL = ".engine/architecture/feature"
 STATE_DIR = Path(".claude") / "state" / "journeys"
 EXIT_OK, EXIT_USAGE, EXIT_REFUSED, EXIT_NONE = 0, 2, 3, 4
@@ -457,7 +465,7 @@ def _unit_or_none(root: Path, unit: str, verb: str) -> str:
     return ""
 
 
-def cmd_seal(root: Path, unit: str, owner_flag: bool, in_session: bool) -> int:
+def cmd_seal(root: Path, unit: str, owner_flag: bool, in_session: bool, answer: str = "", where: str = "") -> int:
     why = _unit_or_none(root, unit, "seal")
     if why:
         return _refuse(why, EXIT_NONE)
@@ -472,7 +480,15 @@ def cmd_seal(root: Path, unit: str, owner_flag: bool, in_session: bool) -> int:
                        EXIT_USAGE if in_session else EXIT_REFUSED)
     if now == "unsealed" and goals.unattended(root):
         return _refuse(SEALS_TO_ASK.format(unit=unit), EXIT_USAGE)
-    return _apply_change(root, unit, "seal") if now == "changed" else _seal_checked(root, unit, "seal")
+    why = goals.answer_error(answer) if in_session or answer.strip() else ""
+    if why:
+        return _refuse(why)
+    done = _apply_change(root, unit, "seal") if now == "changed" else _seal_checked(root, unit, "seal")
+    if done == EXIT_OK and answer.strip():
+        what = f"{unit} {unit_rel(root, unit)}"
+        line = goals.record_approval(root, APPROVALS_REL, what, goals.digest(root / unit_rel(root, unit)), answer, where)
+        print(f"the owner's answer -> {APPROVALS_REL}: {line}")
+    return done
 
 
 def _seal_checked(root: Path, unit: str, verb: str) -> int:
@@ -655,6 +671,8 @@ def main(argv: list[str] | None = None) -> int:
     seal.add_argument("unit")
     seal.add_argument("--owner-approved", action="store_true",
                       help="the owner's flag, for the owner's own terminal; inside a Claude Code session it does not count")
+    seal.add_argument("--answer", default="", help="the owner's answer, verbatim — the approval the seal rests on (board 210)")
+    seal.add_argument("--where", default="", help="where the owner said it: the session or the channel")
     for name in ("first-seal", "amend"):
         verb = sub.add_parser(name)
         verb.add_argument("unit")
@@ -671,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "trace":
         return cmd_trace(root)
     if args.command == "seal":
-        return cmd_seal(root, args.unit, args.owner_approved, in_session)
+        return cmd_seal(root, args.unit, args.owner_approved, in_session, args.answer, args.where)
     if args.command == "first-seal":
         return first_seal(root, args.unit, args.sha256, in_session)
     return amend(root, args.unit, args.sha256, in_session)

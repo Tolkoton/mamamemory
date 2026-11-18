@@ -101,6 +101,13 @@
 # that turn (or the task's budget buys no turn), the files are listed in the anomaly journal and
 # the next task is taken. The runner deletes, stashes and commits none of them.
 #
+# RECORDS ARE THE RUNNER'S, NOT A QUESTION (board 414). What hooks, gates and scripts write — the
+# overseer's and the reader's ledgers, the lesson queue, the anomaly journal (RECORDS below) — a session
+# left uncommitted is committed by the runner in a journal commit of its own: before every pull, after
+# every attempt and every task. Another session's uncommitted CODE found when a task starts is not
+# committed: a copy goes to a wip branch (the files stay where they are), the journal names it, and
+# nobody is asked.
+#
 # STOPPING IT (board 019). Never by killing the process: the agent then loses the uncommitted
 # work of its task. `--stop-after-task` puts the flag .claude/state/board/stop-after-task; the
 # runner looks at it between tasks only, so the current task is finished and pushed first, then
@@ -223,6 +230,7 @@ GUARD_KEPT="$STATE/guard-before"   # the task (line 1) and what `before` printed
 ACCEPTED="$STATE/gate-accepted"   # answers that arrived from the owner: name, stamp, sha256
 REVIEWED_ACCEPTED="$STATE/reviewed-accepted"   # the numbers of tasks/.reviewed that arrived from the owner (board 100)
 DIRTY_BEFORE="$STATE/dirty-before" # what was uncommitted when the task in doing/ was started
+FOREIGN_SAVED="$STATE/foreign-saved"   # board 414: the tree of another's work last kept on a wip branch
 UNTRUSTED_NOTED="$STATE/untrusted-workspace"   # board 791: the journal has its entry — one a project
 UNTRUSTED_LOG=""   # the first log of this run in which claude said the workspace is not trusted
 blocks_marker() { echo "$STATE/three-blocks-$1.json"; }   # left by overseer_stop.py after the third BLOCK
@@ -366,22 +374,29 @@ board_commit() {
   event "commit $(git rev-parse --short HEAD) $1"
 }
 
-# commit_journal <message>: commit the anomaly journal when it has uncommitted entries — since board 739
-# each session's own file of it under .engine/journal/anomalies/, and tasks/ANOMALIES.md a fold wrote. It
-# never stops anything: a journal that cannot be committed now is committed with the next change.
+# RECORDS: what hooks, gates and scripts write and nobody edits — the journals' session files under
+# .engine/journal/ (ledger, lessons, anomalies, parked: board 739), the shared files a fold writes, the
+# reader's and the testing manager's ledgers. Board 414: a session that left one of them uncommitted
+# is never a question for the owner — the runner commits it in a journal commit of its own.
+RECORDS=(.engine/journal tasks/ANOMALIES.md .engine/overseer/ledger.md .engine/overseer/parked.md
+  .engine/lesson-queue.md .engine/reader/ledger.md .engine/testing/ledger.md)
+# commit_journal <message>: commit the RECORDS that have uncommitted changes, those paths and nothing
+# else (another session's code stays where it is, uncommitted). Called before every pull, after every
+# attempt and after every task, so a task starts — and a release is asked for — on records committed.
+# It never stops anything: a record that cannot be committed now is committed with the next change.
 commit_journal() {
   local paths=() path
-  for path in tasks/ANOMALIES.md .engine/journal/anomalies; do [ -e "$path" ] && paths+=("$path"); done
+  for path in "${RECORDS[@]}"; do [ -e "$path" ] || git ls-files --error-unmatch -- "$path" > /dev/null 2>&1 && paths+=("$path"); done
   [ "${#paths[@]}" -gt 0 ] || return 0
-  [ -n "$(git status --porcelain -- "${paths[@]}" 2>/dev/null)" ] || return 0
+  [ -n "$(git status --porcelain --untracked-files=all -- "${paths[@]}" 2>/dev/null)" ] || return 0
   [ "$(git branch --show-current 2>/dev/null)" = "$BRANCH" ] || return 0
-  git add -- "${paths[@]}" >> "$STATE/logs/git.log" 2>&1 \
+  git add -A -- "${paths[@]}" >> "$STATE/logs/git.log" 2>&1 \
     && git commit -q -m "$1" -- "${paths[@]}" >> "$STATE/logs/git.log" 2>&1 \
     && event "commit $(git rev-parse --short HEAD) journal"
   return 0
 }
-# What a hook, the gate or the agent wrote into the journal (board 035) is committed by the runner.
-JOURNAL_OTHERS="board: anomaly journal — entries written by a hook, the gate or the agent"
+# What a hook, a script, the gate or the agent wrote into the records (board 035, 414) is committed by the runner.
+JOURNAL_OTHERS="journal: records left uncommitted — ledgers, lessons, anomaly entries a hook, a script, the gate or the agent wrote"
 
 # note_anomaly <task|-> <what happened> <what was done>: one entry of the anomaly journal (the
 # session's own file of it, board 739), in a commit of its own.
@@ -576,6 +591,21 @@ sweep_closed_questions() {
   done <<< "$(board gate-closed)"
 }
 
+# sweep_settled: what a task waits for has happened — a tag, a file (`Чекає на:`, board 415). The unanswered question
+# goes from blocked/ to done/ with a report, and a done/ report's line becomes `Здійснилось:` (the release task
+# closed waiting for the operator is marked released when its tag appears). Nobody is asked a question that asks nothing.
+sweep_settled() {
+  local settled where name what
+  settled=$(board settled) || finish error - settled "board.py settled failed"
+  [ -n "$settled" ] || return 0
+  while IFS=$'\t' read -r where name what; do
+    event "settled $where ${name%.md}"
+    say "${name%.md}: $what — no answer needed"
+  done <<< "$settled"
+  board_commit "board: what was waited for has happened — $(cut -f2 <<< "$settled" | sed 's/\.md$//' | paste -sd ' ' -)" \
+    || finish error - commit "cannot commit the settled tasks"
+}
+
 # reviewed_guard: «the owner looked it over» is a task's number in tasks/.reviewed, and it arrives
 # from the owner only — in the branch or through the inbox (board 100). A number that is in the
 # checkout and never arrived was written on this machine: it is removed, with a journal entry, and
@@ -601,10 +631,17 @@ reviewed_guard() {
 }
 
 # operator_requests: in the engine's own repository only — after a release, one request to the owner's operator
-# per listed project still on an older version (engine.py update-requests, board 409). Never stops the board.
+# per listed project still on an older version (engine.py update-requests, board 409); before it, the request a
+# release task left in .engine/release/<v>/, once per untagged version (engine.py release-deliveries, board 2702).
+# Never stops the board.
 operator_requests() {
   [ -f "$PROJECT_ROOT/engine.py" ] || return 0
   local out
+  if ! out=$(python3 "$PROJECT_ROOT/engine.py" release-deliveries 2>&1); then
+    event "release-deliveries-failed $(head -1 <<< "$out")"
+  elif grep -q '^  delivered ' <<< "$out"; then
+    event "release-deliveries $(grep -c '^  delivered ' <<< "$out")"
+  fi
   if ! out=$(python3 "$PROJECT_ROOT/engine.py" update-requests 2>&1); then
     event "update-requests-failed $(head -1 <<< "$out")"
     return 0
@@ -626,6 +663,7 @@ intake() {
   board reviewed-accept --accepted "$REVIEWED_ACCEPTED" || finish error - reviewed "board.py reviewed-accept failed"   # what the pull and the inbox brought is the owner's
   close_escalations
   sweep_closed_questions
+  sweep_settled
   owner_actions
   answered=$(board unblock) || finish error - unblock "board.py unblock failed"
   if [ -n "$answered" ]; then
@@ -658,7 +696,7 @@ save_wip() {
     && GIT_INDEX_FILE="$index" git add -A -- . ':(exclude)tasks' 2>> "$STATE/logs/git.log" \
     && GIT_INDEX_FILE="$index" git write-tree 2>> "$STATE/logs/git.log")
   rm -f "$index"
-  commit=$([ -n "$tree" ] && git commit-tree "$tree" -p HEAD -m "wip: $stem — the uncommitted work the runner found when it parked the task ($2)" 2>> "$STATE/logs/git.log")
+  commit=$([ -n "$tree" ] && git commit-tree "$tree" -p HEAD -m "wip: $stem — the uncommitted work the runner found ($2)" 2>> "$STATE/logs/git.log")
   WIP="wip/$stem/$(date -u +%Y%m%dT%H%M%SZ)"
   if [ -z "$commit" ] || ! git branch "$WIP" "$commit" >> "$STATE/logs/git.log" 2>&1; then
     event "wip-failed $stem"; WIP=""; return 0
@@ -668,6 +706,29 @@ save_wip() {
   else
     event "wip-local $WIP $(git rev-parse --short "$commit")"
   fi
+}
+
+# keep_foreign <stem>: the task was just started, and outside tasks/ lies uncommitted work that is no
+# record — another session's (board 414). It is not this task's to commit and not a question for the
+# owner: the runner saves a copy on a wip branch (save_wip: the checkout, its index and the files are
+# not touched, so a session still working on them loses nothing) and writes the journal entry that
+# names the branch. The same work found again at the next start — the same paths with the same
+# contents, whatever HEAD is by then — is not saved twice ($FOREIGN_SAVED keeps its fingerprint).
+keep_foreign() {
+  local stem="$1" paths count print
+  paths=$(git -c core.quotePath=false status --porcelain --untracked-files=all -- . ':(exclude)tasks' | cut -c4- | LC_ALL=C sort -u)
+  [ -n "$paths" ] || return 0
+  print=$(while IFS= read -r path; do
+    if [ -f "$path" ]; then echo "$(git hash-object -- "$path" 2>/dev/null) $path"; else echo "gone $path"; fi
+  done <<< "$paths" | sha256sum | cut -d' ' -f1)
+  [ "$print" != "$(cat "$FOREIGN_SAVED" 2>/dev/null)" ] || return 0
+  save_wip "$stem" "another session's uncommitted work, found when $stem was started"
+  [ -n "$WIP" ] || return 0
+  echo "$print" > "$FOREIGN_SAVED"
+  count=$(wc -l <<< "$paths" | tr -d ' ')
+  event "foreign-kept $stem $WIP $count file(s)"
+  note_anomaly "$stem" "коли задачу взято в роботу, у робочому дереві лежала чужа незакомічена робота (не службові записи): $count файл(ів) — $(head -n 20 <<< "$paths" | sed 's/.*/`&`/' | paste -sd, - | sed 's/,/, /g')$([ "$count" -le 20 ] || echo ", …")" \
+    "runner зберіг копію в гілці \`$WIP\`$([ -n "$WIP_AT" ] && echo " (в $WIP_AT)" || echo " (лише на сервері)"); файли лишились у робочому дереві, як були, у commit задачі \`$stem\` не йдуть. Питання власникові не ставиться (задача 414): повернути роботу — \`git cherry-pick -n $WIP\`."
 }
 
 # park_task <stem> <reason> <detail>: the runner gives up on this task, not on the board (board 021).
@@ -1085,6 +1146,8 @@ while :; do
     tasks/todo/*)
       TASK=$(board start "$TASK") || finish error "$TASK_NAME" start "board.py start refused"
       board_commit "board: $TASK_NAME → doing" || finish error "$TASK_NAME" commit "cannot commit the move to doing/"
+      commit_journal "$JOURNAL_OTHERS"   # board 414: records are never another's work left for this task
+      keep_foreign "$TASK_NAME"
       dirty_paths > "$DIRTY_BEFORE"
       # board 409: what is uncommitted now is another's work; check-close asks this task no PASS for it
       python3 "$HERE/../hooks/mode.py" --root "$PROJECT_ROOT" foreign-mark "$TASK_NAME" > /dev/null || event "foreign-mark-failed $TASK_NAME"
@@ -1100,6 +1163,7 @@ while :; do
     || finish error "$TASK_NAME" commit "cannot commit the leftover changes under tasks/"
   [ "$CLOSED_BY" != agent ] || close_clean "$TASK_NAME"
   [ "$CLOSED_BY" != agent ] || check_minimum "$TASK_NAME"
+  commit_journal "$JOURNAL_OTHERS"   # board 414: a stop after this task leaves the records committed for a release
   rm -f "$DIRTY_BEFORE"
   memo finish "$TASK_NAME" "$OUTCOME"
   event "task-$OUTCOME $TASK_NAME cost=$(memo get "$TASK_NAME" cost)"

@@ -80,8 +80,15 @@ again, fresh, with `--changed <lines>` naming the lines the answers changed: tha
 those changes and does not look for the consequences of the owner's answers. The §5 reread stays; it
 does not replace `preseal`.
 
-**Approval.** Only then show the owner the whole document and ask for approval in so many words. Only
-after an explicit yes: `python3 .claude/hooks/goals.py seal`, then `overseer_phase.py clear`.
+**Approval.** Only then show the owner the whole document with the decisions still open, numbered,
+and say in the same message that the answer to them is the approval: «Відповідь на ці питання — це й
+затвердження: після неї запечатаю, змінити можна будь-коли». The answer that closes the last open
+decisions is the approval (board 210) — no second «так» for the same text: write it into the document
+and the journal verbatim, read it back in one message and seal: `python3 .claude/hooks/goals.py seal
+--answer «<the owner's words, verbatim>» [--where <the session>]` (the quote goes into
+`.engine/goals/approvals.md`), then `overseer_phase.py clear`. Nothing open was left → ask for approval
+in so many words, and the yes is the answer you pass. An answer that leaves a decision open,
+contradicts the record or is «так, але…» (the script refuses it) gets one clarifying question, not a seal.
 
 **The hand-off (board 205).** When `seal` printed `NEXT: /master-architect` (a first seal, and no
 matrix or map yet: a new project), the architecture starts now, without a command from the owner:

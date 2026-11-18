@@ -1691,15 +1691,14 @@ def record(root: Path, agent: str, text: str) -> tuple[int, str]:
 
 
 def handed_back(envelope: JsonObj) -> str:
-    text = str(envelope.get("last_assistant_message") or "")
-    if text:
-        return text
+    """The agent's answer: the one helper every SubagentStop recorder shares (`overseer_verdict.reply_of`,
+    board 2707)."""
     try:
         import overseer_verdict
 
-        return overseer_verdict._handed_back(envelope.get("agent_transcript_path"))
+        return overseer_verdict.reply_of(envelope)
     except (ImportError, OSError, ValueError, AttributeError):
-        return ""
+        return str(envelope.get("last_assistant_message") or "")
 
 
 def record_hook(root: Path, envelope: JsonObj) -> JsonObj | None:

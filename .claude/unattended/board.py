@@ -298,6 +298,15 @@ the guard off. After the guard the runner asks `reviewed-clean` whether HEAD sti
 and withholds its push when it does. All of this holds a number written in the ordinary way; a session
 that works against the check on purpose is outside it (docs/engine-limits.md, «The same Linux user»).
 
+WHAT HAS HAPPENED ASKS NOTHING (board 415). A line `Чекає на: tag <name>` or `Чекає на: file <path>`
+(a path inside the repository) names what a task waits for that nobody has to answer: a release the
+operator makes, a file somebody else puts. `settled` looks at every such line, outside code blocks
+and comments, each round of the runner: an unanswered question in blocked/ whose every line has
+happened goes to done/NNN-name/ with a report that says what happened (an answered one is the
+owner's and is left alone); in a done/ report the line becomes `Здійснилось: …` with the evidence
+and the time — the release task closes in done/ waiting for the operator, and is marked released
+when the tag appears. It prints one line per change: where (blocked or done), the name, what happened.
+
 `--root DIR` names the repository (default: the one this file is installed in).
 """
 
@@ -374,6 +383,8 @@ ARCHITECT_NAME = re.compile(r"^\d{3,}-master-architect(?:\.md)?$")
 CLEANUP_NAME = re.compile(r"^\d{3,}-cleanup-(\d{4}-\d\d-\d\d)(?:\.md)?$")
 CLEANUP_SCRIPT, CLEANUP_DAYS = ".claude/hooks/simplifier.py", 1
 ITEM = re.compile(r"^Відкритий пункт:[ \t]*(\S.*?)[ \t]*$", re.MULTILINE)
+WAITS = re.compile(r"^Чекає на:[ \t]*(tag|file)[ \t]+(\S+)[ \t]*$", re.MULTILINE)  # WHAT HAS HAPPENED ASKS NOTHING (board 415)
+HAPPENED = "Здійснилось:"  # the line a met `Чекає на:` of a done/ report becomes
 OFFERS = {*ACTION_FILES, RULE_ACTION, *TARGETED}  # what an action line may offer; the rule's sha256 is of its id and text
 EXIT_REFUSED, EXIT_TODO_EMPTY, EXIT_NONE_ELIGIBLE, EXIT_EXTRA_WAIT = 2, 3, 4, 5
 
@@ -1194,15 +1205,77 @@ def close_item(board: Board, key: str, why: str) -> Path | None:
         found = ITEM.search(path.read_text(encoding="utf-8").split("\n## ", 1)[0])
         if not found or found.group(1) != key or any(read(path).answers):
             continue
-        folder = board.tasks / "done" / path.stem
-        folder.mkdir(parents=True, exist_ok=True)
-        title = path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
-        (folder / "report.md").write_text(f"# {title}: звіт\n\n## Що змінилось для власника\nПитання знято без вашої відповіді: {why}\n\n"
-                                          f"- Закрито: {utc_now()}\n", encoding="utf-8")
-        target = folder / "task.md"
-        path.replace(target)
-        return target
+        return without_answer(board, path, why)
     return None
+
+
+def without_answer(board: Board, path: Path, why: str) -> Path:
+    """An unanswered question settled without the owner: done/NNN-name/ with task.md and a report that says why."""
+    folder = board.tasks / "done" / path.stem
+    folder.mkdir(parents=True, exist_ok=True)
+    title = path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip()
+    (folder / "report.md").write_text(f"# {title}: звіт\n\n## Що змінилось для власника\nПитання знято без вашої відповіді: {why}\n\n"
+                                      f"- Закрито: {utc_now()}\n", encoding="utf-8")
+    target = folder / "task.md"
+    path.replace(target)
+    return target
+
+
+def waits_of(text: str) -> list[tuple[str, str]]:
+    """The `Чекає на:` lines of a task or a report, outside code blocks and comments: (kind, subject)."""
+    return WAITS.findall(FENCE.sub("", COMMENT.sub("", text)))
+
+
+def happened(root: Path, kind: str, subject: str) -> str | None:
+    """What shows that the awaited thing is there — the commit a tag points at, a file inside the
+    repository — or None. A tag is looked for in this clone: the operator releases in it, and the
+    runner's fetch brings one made elsewhere."""
+    if kind == "tag":
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", subject):
+            return None
+        found = subprocess.run(["git", "-C", str(root), "rev-parse", "-q", "--verify", f"refs/tags/{subject}^{{commit}}"],
+                               capture_output=True, text=True, check=False)
+        return f"tag {subject} стоїть на commit-і {found.stdout.strip()[:7]}" if found.returncode == 0 else None
+    given = Path(subject)
+    if given.is_absolute() or ".." in given.parts or not (root / given).exists():
+        return None
+    return f"файл {subject} є"
+
+
+def all_happened(root: Path, waits: list[tuple[str, str]]) -> str | None:
+    """The evidence of every awaited thing, or None while one of them has not happened."""
+    seen = [happened(root, kind, subject) for kind, subject in waits]
+    return "; ".join(s for s in seen if s) if waits and all(seen) else None
+
+
+def settled(board: Board, root: Path) -> list[str]:
+    """What a task waited for has happened (board 415): the unanswered question in blocked/ goes to
+    done/ with a report, the `Чекає на:` line of a done/ report becomes `Здійснилось:`. One line a change."""
+    lines: list[str] = []
+    for path in board.files("blocked"):
+        text = path.read_text(encoding="utf-8")
+        seen = all_happened(root, waits_of(text))
+        if seen and not any(read(path).answers):
+            without_answer(board, path, f"те, чого воно чекало, вже здійснилось — {seen}. Відповідати не треба.")
+            lines.append(f"blocked\t{path.name}\t{seen}")
+    for folder in board.done():
+        report = folder / "report.md"
+        text = _text(report)
+        marked = text
+        for kind, subject in waits_of(text):
+            seen = happened(root, kind, subject)
+            if seen:
+                done_line = f"{HAPPENED} {kind} {subject} — {seen}; відмітив runner {utc_now()}"
+                marked = re.sub(rf"^Чекає на:[ \t]*{kind}[ \t]+{re.escape(subject)}[ \t]*$", done_line.replace("\\", "\\\\"), marked, flags=re.MULTILINE)
+                lines.append(f"done\t{folder.name}\t{seen}")
+        if marked != text:
+            report.write_text(marked, encoding="utf-8")
+    return lines
+
+
+def waiting_on(board: Board) -> list[tuple[Path, list[tuple[str, str]]]]:
+    """The done/ reports with a `Чекає на:` not met yet: work finished that waits for somebody else, not for the owner."""
+    return [(folder, waits) for folder in board.done() if (waits := waits_of(_text(folder / "report.md")))]
 
 
 PROPOSAL_NOTE = (f"- Це пропозиція, а не задача в черзі: runner із `tasks/{PROPOSED}/` нічого не бере. У роботу її ставить "
@@ -1773,7 +1846,10 @@ def summary(board: Board) -> list[str]:
     lines = [f"todo: {len(todo)}   doing: {len(doing)}   blocked: {len(blocked)}   done: {len(done)}   {PROPOSED}: {len(offered)}", *errors(board)]
     lines += [f"в роботі з власником: {p.name}" if read(p).attended else f"в роботі: {p.name}" for p in doing]
     for path in blocked:
-        lines.append(f"чекає відповіді власника: {path.name} — {first_open_question(read(path))}")
+        awaited = waits_of(_text(path))
+        lines.append(f"чекає відповіді власника: {path.name} — {first_open_question(read(path))}"
+                     + (f" (закриється само, коли буде: {', '.join(f'{k} {v}' for k, v in awaited)})" if awaited else ""))
+    lines += [f"готова, чекає не на власника: {folder.name} — {', '.join(f'{k} {v}' for k, v in pending)}" for folder, pending in waiting_on(board)]
     held = extra_refusal(board.tasks)
     whole = board.gate_hold()
     if whole:
@@ -1890,6 +1966,7 @@ def main() -> int:
     close_parser = commands.add_parser("close-item")
     close_parser.add_argument("--key", required=True)
     close_parser.add_argument("--why", required=True, help="why it is settled without the owner (the report)")
+    commands.add_parser("settled")
     commands.add_parser("summary")
     commands.add_parser("check")
     review_parser = commands.add_parser("review")
@@ -2007,6 +2084,10 @@ def main() -> int:
             print(f"no task closed: no unanswered item with the key {args.key!r} waits in tasks/blocked/ or tasks/proposed/", file=sys.stderr)
             return 1
         print(board.shown(item))
+        return 0
+    if args.command == "settled":
+        for line in settled(board, root):
+            print(line)
         return 0
     if args.command == "anomaly":
         print(board.shown(anomaly(board, args.task, args.what, args.done, args.source)))
