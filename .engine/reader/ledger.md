@@ -51,3 +51,8 @@
 - Record: tasks/done/405-cleanup-2026-11-18/report.md
 - Reason: All four questions hold. The references I could check say what the report says: the two constants and their line numbers, the 35 signals and how they split, start at complexity 28, the 404 numbers, the commit 64e8718, and the findings F-705b9b74 and F-91cfce8b lowered to flag_only in .engine/simplifier/report.md. Every item of «Що зробити» and «Готово, коли» is answered: there was no auto_remove finding, so nothing was removed and no full test run was needed. The report has no open question for the owner, and the engine terms stay in English.
 - Request: 20261118T100323Z-d4ccc7 (attempt 1)
+
+## 2026-11-18T10:06:12Z — 405-cleanup-2026-11-18 — READER_PASS
+- Record: tasks/done/405-cleanup-2026-11-18/report.md
+- Reason: All four questions hold. The references I could check say what the report says they do. Each of the four «Що зробити» items is answered: nightly output, the one simplifier pass, no auto_remove so nothing removed, and the two flag_only findings left for review. The report raises no open question for the owner. Engine terms stay English or use the wording of the task file itself («нічний режим», «друга думка»).
+- Request: 20261118T100528Z-48f983 (attempt 1)
